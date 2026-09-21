@@ -69,8 +69,43 @@ Key, Swift Boots (+40% speed), Torch (roughly doubles how far you can see), Trea
 | Brute | 165 | 1.2 | 20 | Slow, huge, hits like a truck. |
 
 Blobs use a breadth-first flow field that is rebuilt around you five times a second, so they
-route around corners instead of bumping into walls. They amble until they see or hear you,
-then commit. Opening a door opens it for them too.
+route around corners instead of bumping into walls, and follow you up and down stairs. They
+amble until they see or hear you, then commit. Opening a door opens it for them too.
+
+**Magic** — six scrolls (Fireball, Frost Shard, Heal, Chain Lightning, Blink, Ward) and Mana
+Potions. See *Levels and magic* below.
+
+### Floors, stairs and ladders
+
+A maze can be up to **4 floors** high; the tabs above the canvas switch between them, and the floor
+below shows faintly underneath so you can line things up. Place **Stairs Up** or a **Ladder Up** on
+the lower floor: its way down appears in the same cell on the floor above (adding that floor if it
+does not exist yet), and erasing either end removes both. **Generate** takes a **Floors** count and
+joins the floors with stairs placed far from where you arrive, with the exit on the top floor.
+In the maze, stand on the stairs and press `E`. Stairwells and trapdoors are cut into the floor,
+and there is an opening in the ceiling above every way up.
+
+### Monster Maker
+
+Under **Enemies**, `＋ Monster Maker` designs your own monster: a body (slime, spider, goblin, orc,
+skeleton, bat or ghost), three colours, size, health, speed, damage, attack rate, sight range, and
+one special ability:
+
+| Ability | |
+| --- | --- |
+| Spits | Keeps its distance and lobs globs at you. |
+| Poison | Bites poison you for a few seconds (a heal or a potion cures it). |
+| Regenerates | Heals itself steadily. |
+| Splits | Bursts into two smaller, faster copies when killed. |
+| Explodes | Charges in and blows up, hurting everyone near. |
+| Drains life | Heals itself with every bite. |
+
+The live preview shows it animating next to an adventurer for scale, with its danger rating, XP,
+and how many sword hits it takes. **🎲 Surprise me** rolls a random one. Monsters are saved in a
+library in your browser's storage (it survives closing the tab) and appear in the palette;
+double-click one there to edit it. A maze carries a copy of every custom monster it uses, so
+exported files, shared maze codes and online rooms bring them along, and monsters in a maze you
+open join your own library.
 
 ---
 
@@ -81,14 +116,47 @@ then commit. Opening a door opens it for them too.
 | Move | `W` `A` `S` `D`, `Shift` to sprint (costs stamina) |
 | Look | Mouse (click the view to capture it) |
 | Attack / block | Left click / hold right click |
-| Weapons | `1` `2` `3`, or the scroll wheel |
-| Open door | `E` |
+| Weapons | `1` fists · `2` sword · `3` bow · `4` magic, or the scroll wheel |
+| Next spell | `R` (`Shift+R` back) |
+| Character sheet | `C`: stats, spells, scrolls, drop items |
+| Open door / climb stairs | `E` |
 | Map | `Tab` or `M` |
 | Pause | `Esc` |
 
-The minimap only fills in what you have actually seen, and only shows blobs when they are
-close. Score comes from treasure, kills, secrets, the door, your remaining health and how
+The minimap only fills in what you have actually seen on your floor, and only shows monsters when
+they are close. Score comes from treasure, kills, secrets, the door, your remaining health and how
 fast you got out.
+
+### Levels and magic
+
+Defeating monsters earns **XP** (custom monsters are worth more the nastier they are); in co-op the
+rest of the team learns a quarter of it too. Each level (up to 20) gives a **stat point** and a
+second wind. Spend points in the character sheet (`C`, or `1`–`5` while it is open):
+
+| Stat | Per point |
+| --- | --- |
+| Attack | +10% damage with every weapon and spell |
+| Speed | +5% movement speed |
+| Defense | −7% damage taken (up to 60%) |
+| Health | +15 maximum health |
+| Mana | +20 mana, faster mana regen, +8% spell power, and it unlocks stronger spells |
+
+**Scrolls** go into your bag when you walk over them; learn them from the character sheet. Tier 2
+spells need 2 points in Mana and tier 3 need 4, so a party can have a dedicated mage. **Any item
+you carry can be dropped** from the sheet (it lands in front of you), so the fighter who finds a
+Chain Lightning scroll can leave it for the mage. Press `4` for the magic hand; left click casts.
+
+| Spell | Tier | Mana | |
+| --- | --- | --- | --- |
+| Fireball | 1 | 15 | Bursts on impact, hurting everything close. |
+| Frost Shard | 1 | 12 | Fast; slows what it hits. |
+| Heal | 1 | 22 | Heals you and cures poison; in co-op, teammates within 3 tiles too. |
+| Chain Lightning | 2 | 26 | Instant; jumps to two more foes. |
+| Blink | 2 | 18 | Teleports you forward up to 4.5 tiles. |
+| Ward | 3 | 30 | Halves all damage for 6 seconds. |
+
+In competitive mode, spells hit rivals too, and anything you carry (scrolls included) spills
+where you fall. Your level and learned spells stay with you.
 
 ---
 
@@ -108,9 +176,9 @@ joins while a match is running plays from the next round.
 
 | | |
 | --- | --- |
-| Overhead map | The whole maze with its real wall textures and the secret walls marked. Every player shows as an icon in their colour, with the direction they face, their name and health. Blobs, items, arrows and pings show live, and a side panel lists everyone's health, weapon and status. |
-| Player view | Click a player (on the map or in the list), or press `1`–`4`, to see through their eyes, with their health, weapon, torchlight and minimap. |
-| Controls | `Tab` / `M` switches overhead ↔ player view · `←` `→`, the wheel or a click cycles players · `Esc` opens the menu (end the match, or leave). |
+| Overhead map | One floor of the maze with its real wall textures, stairs, and the secret walls marked. Every player shows as an icon in their colour, with the direction they face, their name, level and health. Monsters, items, arrows, spells and pings show live. A side panel has a button per floor (with how many players are on each) and lists everyone's health, level, floor, weapon and status. |
+| Player view | Click a player (on the map or in the list), or press `1`–`4`, to see through their eyes on whatever floor they are on, with their health, weapon, torchlight and minimap. |
+| Controls | `Tab` / `M` switches overhead ↔ player view · `PgUp` `PgDn` (or the wheel, or the floor buttons) change floor · `←` `→` or a click cycles players · `Esc` opens the menu (end the match, or leave). |
 
 | Mode | |
 | --- | --- |
@@ -152,7 +220,9 @@ js/textures.js      procedural 64x64 wall/floor textures
 js/sprites.js       procedural sprites (incl. the players, 4 views each), reused as palette icons
 js/audio.js         WebAudio synthesis, no audio files
 js/level.js         level model, maze generator, validator, maze codes, save/load
-js/sim.js           the world rules; runs in the page (solo) and on the server (online)
+js/sim.js           the world rules (monsters, floors, combat, levels, spells); page and server
+js/character.js     the character sheet: stats, spellbook, scrolls, dropping items
+js/monsters.js      the Monster Maker and your saved monster library
 js/editor.js        the 2D editor
 js/raycaster.js     the 3D renderer
 js/entities.js      views of blobs, arrows, pickups and other players; smoothing; particles
@@ -165,15 +235,18 @@ js/main.js          boot and menus
 server.js           static files, maze store (/m), rooms and the 20 Hz world at /ws
 core.js             loads js/util, defs, level, sim into Node
 tests/              node --test: rules (sim.test.js) and the server end to end (server.test.js)
-tools/browser-test.js   two headless Chromes: solo, file://, host, invite link, match, combat
+tools/browser-test.js   two headless Chromes: solo, file://, host, invite link, match, combat, spectate
+tools/features-test.js  monster maker + library, floors, levels, spells, drops, multi-floor spectating
+tools/sprite-sheet.js   renders every procedural sprite onto one sheet
 deploy.ps1, deploy/     ship to the stegopets droplet (see below)
 ```
 
 ### Tests
 
 ```
-npm test                      rules + server relay (17 tests)
+npm test                      rules + server relay (30 tests)
 node tools/browser-test.js    the real page in two headless Chromes (screenshots in tools/shots/)
+node tools/features-test.js   the newer systems end to end (set MAZE_URL to test the live site)
 ```
 
 ### Hosting

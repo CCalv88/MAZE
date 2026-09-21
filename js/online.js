@@ -110,7 +110,10 @@
     $("roomPill").hidden = false;
     $("roomPillCode").textContent = room.code;
     $("lobbyCode").textContent = room.code;
-    $("lobbyMazeName").textContent = room.maze.name;
+    const lvInfo = room.maze.level, extras = [];
+    if ((lvInfo.floors || 1) > 1) extras.push(lvInfo.floors + " floors");
+    if (lvInfo.monsters && lvInfo.monsters.length) extras.push(lvInfo.monsters.length + " custom monster" + (lvInfo.monsters.length > 1 ? "s" : ""));
+    $("lobbyMazeName").textContent = room.maze.name + (extras.length ? "  ·  " + extras.join(" · ") : "");
     $("lobbyMazeCode").textContent = room.maze.code;
     setMode(room.mode, "lobby");
     document.querySelectorAll('.modePick[data-for="lobby"] .modeBtn').forEach(function (b) { b.disabled = !amHost() || room.state !== "lobby"; });

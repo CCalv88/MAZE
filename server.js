@@ -20,7 +20,7 @@ const HOST = process.env.HOST || '127.0.0.1';
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 const MAZE_DIR = path.join(DATA_DIR, 'mazes');
 const TICK_MS = 50;
-const MAX_MSG = 64 * 1024;
+const MAX_MSG = 256 * 1024;                // a 4-floor 64x64 maze with custom monsters is ~70 KB of JSON
 const ROOM_IDLE_MS = 30 * 60 * 1000;      // a room nobody is in closes after half an hour
 const MATCH_IDLE_MS = 5 * 60 * 1000;      // a match everyone left ends after five minutes
 const MAX_MAZES = 20000;
@@ -292,12 +292,16 @@ function handle(ws, msg) {
   const sim = room.sim;
   if (!sim || !sim.player(seat)) return;
   if (msg.t === 'pos') {
-    const m = { x: +msg.x, y: +msg.y, ang: +msg.ang, pitch: +msg.pitch, blk: msg.blk ? 1 : 0, use: msg.use ? 1 : 0, w: msg.w | 0, ep: msg.ep | 0 };
-    if (!sim.move(seat, m)) { const p = sim.player(seat); send(ws, { t: 'correct', x: p.x, y: p.y, ep: p.epoch }); }
+    const m = { x: +msg.x, y: +msg.y, ang: +msg.ang, pitch: +msg.pitch, blk: msg.blk ? 1 : 0, use: msg.use ? 1 : 0, w: msg.w | 0, ep: msg.ep | 0, f: msg.f | 0, sp: typeof msg.sp === 'string' ? msg.sp.slice(0, 12) : undefined };
+    if (!sim.move(seat, m)) { const p = sim.player(seat); send(ws, { t: 'correct', x: p.x, y: p.y, f: p.f, ep: p.epoch }); }
     room.lastSeen = Date.now();
   } else if (msg.t === 'atk') sim.attack(seat);
   else if (msg.t === 'door') sim.openDoor(seat, msg.x | 0, msg.y | 0);
   else if (msg.t === 'ping') sim.ping(seat, +msg.x, +msg.y);
+  else if (msg.t === 'climb') sim.climb(seat);
+  else if (msg.t === 'stat') sim.allocate(seat, String(msg.k || ''));
+  else if (msg.t === 'learn') sim.learn(seat, String(msg.sp || ''));
+  else if (msg.t === 'drop') sim.drop(seat, String(msg.what || '').slice(0, 24));
 }
 
 // one clock for every match in progress

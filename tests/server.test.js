@@ -206,6 +206,43 @@ test('the host can spectate: no body in the match, but the whole world arrives',
   host2.close(); p.close();
 });
 
+test('floors, scrolls and drops over the wire', async () => {
+  // start beside stairs up, a scroll one step further; the exit is upstairs
+  const lv = L.fromJSON(corridor());
+  lv.things[L.idx(lv, 10, 2, 0)] = 0;
+  L.setThing(lv, 3, 2, T.SCROLL_FROST, 0);
+  L.setThing(lv, 4, 2, T.STAIRS_UP, 0);
+  for (let x = 1; x < 11; x++) lv.walls[L.idx(lv, x, 2, 1)] = W.EMPTY;
+  L.setThing(lv, 9, 2, T.FINISH, 1);
+  const a = await client();
+  // walk in steps the server's speed check allows
+  const walk = async (from, to) => { for (let x = from; x <= to + 1e-9; x += 0.4) { send(a, { t: 'pos', x: Math.min(x, to), y: 2.5, f: 0, ang: 0, pitch: 0, ep: 1 }); await wait(60); } };
+  try {
+  send(a, { t: 'create', pid: 'floor-a', name: 'Climber', level: JSON.parse(L.toJSON(lv)), mode: 'coop' });
+  const room = await until(a, 'room');
+  assert.equal(room.maze.level.floors, 2);
+  send(a, { t: 'start' });
+  const start = await until(a, 'start');
+  assert.equal(start.full.floors, 2);
+  assert.ok(start.full.stairs.length === 2, 'both ends of the stairs are sent');
+  await until(a, 'snap');
+  await walk(1.5, 3.5);
+  const picked = await until(a, m => m.t === 'snap' && m.me && m.me.scrolls.includes('frost'), 'scroll in the bag');
+  assert.deepEqual(picked.me.spells, []);
+  send(a, { t: 'drop', what: 'scroll:frost' });
+  const dropped = await until(a, m => m.t === 'snap' && m.ev.some(e => e.e === 'drop'), 'drop event');
+  assert.equal(dropped.ev.find(e => e.e === 'drop').k, T.SCROLL_FROST);
+  await walk(3.5, 4.5);
+  send(a, { t: 'climb' });
+  const climbed = await until(a, m => m.t === 'snap' && m.ev.some(e => e.e === 'climb'), 'climb event');
+  const ev = climbed.ev.find(e => e.e === 'climb');
+  assert.equal(ev.f, 1);
+  const me = await until(a, m => m.t === 'snap' && m.me && m.me.f === 1, 'upstairs');
+  assert.equal(me.me.ep, 2, 'a new epoch after climbing, so old moves are ignored');
+  send(a, { t: 'abort' });
+  } finally { a.close(); }
+});
+
 test('a match ends for everyone when the first player escapes', async () => {
   const a = await client(), b = await client();
   send(a, { t: 'create', pid: 'race-a', name: 'Ann', level: corridor(), mode: 'versus' });

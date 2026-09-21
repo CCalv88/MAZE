@@ -19,6 +19,7 @@
         <span class="sep"></span>
         <label class="num">W<input id="inpCols" type="number" min="8" max="64" value="25"></label>
         <label class="num">H<input id="inpRows" type="number" min="8" max="64" value="19"></label>
+        <label class="num" title="How many floors Generate builds (1-4)">Floors<input id="inpFloors" type="number" min="1" max="4" value="1"></label>
         <button data-act="resize">Apply</button>
         <span class="sep"></span>
         <button data-act="undo" title="Ctrl+Z">↶</button>
@@ -42,6 +43,7 @@
       </aside>
 
       <div id="canvasWrap">
+        <div id="floorTabs" class="floorTabs"></div>
         <canvas id="editorCanvas"></canvas>
         <div id="editorHint">Left-drag paint · Right-drag erase · Alt-click pick · Scroll to change brush</div>
       </div>
@@ -68,10 +70,49 @@
           <li><b>Door</b> — needs the key. <b>Glass</b> — see through, solid.</li>
           <li><b>Blobs</b> — hunt you through the maze.</li>
           <li><b>Starts P2–P4</b> — where friends spawn online.</li>
+          <li><b>Stairs / Ladder Up</b> — place on the lower floor; the way down appears above.</li>
+          <li><b>Scrolls</b> — picked up, then learned from the character sheet (C).</li>
+          <li><b>Monster Maker</b> — under Enemies. Double-click a custom monster to edit it.</li>
         </ul>
       </aside>
     </div>
     <input id="fileInput" type="file" accept="application/json,.json" hidden>
+
+    <!-- ============== MONSTER MAKER ============== -->
+    <div id="monsterPanel" class="overlay" hidden>
+      <div class="panel maker">
+        <div class="makerHead">
+          <h1>MONSTER MAKER</h1>
+          <button id="mkClose" title="Close (Esc)">✕</button>
+        </div>
+        <div class="makerBody">
+          <div class="makerForm">
+            <label class="field">Name<input id="mkName" type="text" maxlength="20"></label>
+            <div class="field">Body<div id="mkBodies" class="bodyGrid"></div></div>
+            <div class="colorsRow">
+              <label>Skin<input id="mkC1" type="color"></label>
+              <label>Detail<input id="mkC2" type="color"></label>
+              <label>Eyes<input id="mkC3" type="color"></label>
+            </div>
+            <div id="mkSliders" class="mkSliders"></div>
+            <label class="field">Special ability<select id="mkAbility"></select></label>
+            <div id="mkAbilityDesc" class="small"></div>
+          </div>
+          <div class="makerPreview">
+            <canvas id="mkPreview" width="300" height="260"></canvas>
+            <div id="mkThreat" class="threat"></div>
+            <div class="mkButtons">
+              <button id="mkRandom" title="A random body, colours and stats">🎲 Surprise me</button>
+              <button id="mkNew">New</button>
+              <button id="mkSave">Save to library</button>
+              <button id="mkSavePlace" class="primary">Save &amp; place</button>
+            </div>
+          </div>
+        </div>
+        <div class="panelTitle">Your monsters · saved in this browser</div>
+        <div id="mkLibrary" class="library"></div>
+      </div>
+    </div>
 
     <!-- ============== ONLINE: host / join ============== -->
     <div id="onlinePanel" class="overlay" hidden>
@@ -146,6 +187,7 @@
   <section id="gameScreen" hidden>
     <canvas id="view"></canvas>
     <canvas id="hud"></canvas>
+    <div id="relock" class="relock" hidden><span>🖱 Click to look around</span></div>
 
     <div id="clickToPlay" class="overlay">
       <div class="panel">
@@ -154,7 +196,7 @@
         <div class="keys specOnly">
           <div><kbd>Tab</kbd> overhead map ↔ a player's eyes</div>
           <div><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd><kbd>4</kbd> or <kbd>Click</kbd> a player: watch them</div>
-          <div><kbd>←</kbd><kbd>→</kbd> or <kbd>Wheel</kbd> next / previous player</div>
+          <div><kbd>←</kbd><kbd>→</kbd> next / previous player · <kbd>PgUp</kbd><kbd>PgDn</kbd> or <kbd>Wheel</kbd> change floor</div>
           <div><kbd>Esc</kbd> menu</div>
         </div>
         <div class="keys playOnly">
@@ -162,7 +204,8 @@
           <div><kbd>Mouse</kbd> look · <kbd>Shift</kbd> sprint</div>
           <div><kbd>L-Click</kbd> attack · <kbd>R-Click</kbd> raise shield</div>
           <div><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> weapons · <kbd>Wheel</kbd> cycle</div>
-          <div><kbd>E</kbd> open door · <kbd>Tab</kbd> map · <kbd>Esc</kbd> pause</div>
+          <div><kbd>E</kbd> open doors, climb stairs · <kbd>Tab</kbd> map · <kbd>Esc</kbd> pause</div>
+          <div><kbd>C</kbd> character: stats, spells, drop items · <kbd>4</kbd> magic · <kbd>R</kbd> next spell</div>
           <div class="onlineOnly"><kbd>F</kbd> ping a spot for everyone · <kbd>E</kbd> (hold) revive a teammate</div>
         </div>
         <button class="primary big playOnly" data-act="lock">CLICK TO PLAY</button>
@@ -196,6 +239,33 @@
       </div>
     </div>
 
+    <!-- character sheet (C) -->
+    <div id="charPanel" class="overlay charOverlay" hidden>
+      <div class="panel sheet">
+        <div class="sheetHead">
+          <div class="lvBadge"><small>LEVEL</small><b id="chLevel">1</b></div>
+          <div class="xpBox"><div class="xpBar"><i id="chXp"></i></div><span id="chXpText"></span></div>
+          <button data-act="closeChar" title="Close (C or Esc)">✕</button>
+        </div>
+        <div class="sheetCols">
+          <section>
+            <h3>Stats <span id="chPoints" class="chPoints"></span></h3>
+            <div id="chStats"></div>
+            <p class="small">Defeating monsters earns XP. Every level gives a point to spend.</p>
+          </section>
+          <section>
+            <h3>Spellbook</h3>
+            <div id="chSpells"></div>
+            <h3>Scrolls to learn</h3>
+            <div id="chScrolls"></div>
+            <h3>Carrying</h3>
+            <div id="chItems"></div>
+          </section>
+        </div>
+        <p class="small"><kbd>1</kbd>–<kbd>5</kbd> spend a point · <kbd>C</kbd> close · Drop leaves an item in front of you for a teammate. <span id="chHint"></span></p>
+      </div>
+    </div>
+
     <div id="endPanel" class="overlay" hidden>
       <div class="panel wide">
         <h1 id="endTitle">ESCAPED</h1>
@@ -225,6 +295,8 @@
 <script src="js/game.js"></script>
 <script src="js/net.js"></script>
 <script src="js/online.js"></script>
+<script src="js/monsters.js"></script>
+<script src="js/character.js"></script>
 <script src="js/main.js"></script>
 </body>
 </html>

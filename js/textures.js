@@ -144,5 +144,36 @@
       grd.addColorStop(0, "#6ffce8"); grd.addColorStop(.45, "#1f8c82"); grd.addColorStop(1, "#16323a");
       g.fillStyle = grd; g.fillRect(0, 0, S, S);
     }, 8);
+
+    // ---- floors: the way down is a stairwell cut into the floor ----
+    make("floorStairs", (g, S) => {
+      g.fillStyle = "#1a1c22"; g.fillRect(0, 0, S, S);
+      g.fillStyle = "#4a4f5c"; g.fillRect(0, 0, S, 5); g.fillRect(0, 0, 5, S); g.fillRect(S - 5, 0, 5, S); g.fillRect(0, S - 5, S, 5);
+      // steps drop away and darken the further down they go
+      for (let k = 0; k < 7; k++) {
+        const y = 6 + k * 8, v = 118 - k * 15;
+        g.fillStyle = "rgb(" + v + "," + (v - 6) + "," + (v - 18) + ")";
+        g.fillRect(6, y, S - 12, 6);
+        g.fillStyle = "rgba(0,0,0,.45)"; g.fillRect(6, y + 6, S - 12, 2);
+      }
+    }, 10);
+    make("floorHatch", (g, S) => {
+      g.fillStyle = "#3a2612"; g.fillRect(0, 0, S, S);
+      g.fillStyle = "#050608"; g.fillRect(9, 9, S - 18, S - 18);
+      g.strokeStyle = "#8a5c2c"; g.lineWidth = 4; g.strokeRect(7, 7, S - 14, S - 14);
+      g.fillStyle = "#b9884f";                                  // the ladder's top rungs
+      g.fillRect(22, 9, 4, S - 18); g.fillRect(S - 26, 9, 4, S - 18);
+      for (let y = 14; y < S - 12; y += 10) g.fillRect(22, y, S - 44, 3);
+      g.fillStyle = "#59636f";                                  // hinges
+      g.fillRect(3, 14, 4, 8); g.fillRect(3, S - 22, 4, 8);
+    }, 10);
+    // the opening you look up into above stairs and ladders going up
+    make("ceilHole", (g, S) => {
+      g.fillStyle = "#14161d"; g.fillRect(0, 0, S, S);
+      const grd = g.createRadialGradient(S / 2, S / 2, 4, S / 2, S / 2, S * 0.5);
+      grd.addColorStop(0, "#3a3326"); grd.addColorStop(.7, "#0b0c10"); grd.addColorStop(1, "#050608");
+      g.fillStyle = grd; g.fillRect(6, 6, S - 12, S - 12);
+      g.strokeStyle = "#4a4f5c"; g.lineWidth = 5; g.strokeRect(4, 4, S - 8, S - 8);
+    }, 8);
   };
 })();

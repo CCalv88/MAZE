@@ -78,7 +78,9 @@
   Renderer.prototype.render = function (game) {
     const Wd = this.W, Hd = this.H, buf = this.buf, zbuf = this.zbuf;
     const p = game.camera();
-    const cols = game.cols, rows = game.rows, walls = game.walls;
+    const cols = game.cols, rows = game.rows, walls = game.floorWalls(p.f);
+    const found = game.secretFound.subarray(p.f * game.plane, (p.f + 1) * game.plane);
+    const marks = game.marks[p.f], ceilMarks = game.ceilMarks[p.f];
 
     const dirX = Math.cos(p.ang), dirY = Math.sin(p.ang);
     const planeX = -dirY * FOV, planeY = dirX * FOV;
@@ -91,10 +93,11 @@
     // ---------------------------------------------------------- floor ---
     const floorTex = MAZE.textures.get("floor").data;
     const ceilTex = MAZE.textures.get("ceil").data;
-    const exitTex = MAZE.textures.get("floorExit").data;
+    // special floor and ceiling cells: the exit glow, stairwells, hatches, openings above stairs up
+    const floorAlt = [floorTex, MAZE.textures.get("floorExit").data, MAZE.textures.get("floorStairs").data, MAZE.textures.get("floorHatch").data];
+    const ceilAlt = [ceilTex, MAZE.textures.get("ceilHole").data];
     const rdx0 = dirX - planeX, rdy0 = dirY - planeY;
     const rdx1 = dirX + planeX, rdy1 = dirY + planeY;
-    const ex = game.exit ? game.exit.cx : -99, ey = game.exit ? game.exit.cy : -99;
 
     for (let y = 0; y < Hd; y++) {
       const isFloor = y > horizon;
@@ -112,12 +115,13 @@
       const stepY = (rowDist * (rdy1 - rdy0)) / Wd;
       let fx = posX + rowDist * rdx0;
       let fy = posY + rowDist * rdy0;
-      const tex = isFloor ? floorTex : ceilTex;
+      const alt = isFloor ? floorAlt : ceilAlt, mk = isFloor ? marks : ceilMarks, tex = alt[0];
       for (let x = 0; x < Wd; x++) {
         const cellX = Math.floor(fx), cellY = Math.floor(fy);
         const tx = ((fx - cellX) * TEX) & TEXMASK;
         const ty = ((fy - cellY) * TEX) & TEXMASK;
-        const src = isFloor && cellX === ex && cellY === ey ? exitTex : tex;
+        const m = cellX >= 0 && cellY >= 0 && cellX < cols && cellY < rows ? mk[cellY * cols + cellX] : 0;
+        const src = m ? alt[m] : tex;
         buf[row + x] = U.shade(src[(ty << 6) + tx], sh);
         fx += stepX; fy += stepY;
       }
@@ -153,7 +157,7 @@
         let texX = (wallHit * TEX) | 0;
         if ((side === 0 && rayX > 0) || (side === 1 && rayY < 0)) texX = TEX - texX - 1;
         hd[n] = dist; ht[n] = tile; hx[n] = texX; hs[n] = side;
-        hf[n] = tile === W.SECRET && game.secretFound[mapY * cols + mapX] ? 1 : 0;
+        hf[n] = tile === W.SECRET && found[mapY * cols + mapX] ? 1 : 0;
         n++;
         if (def.opaque) break;
       }
@@ -269,15 +273,18 @@
     const parts = game.particles;
     for (let i = 0; i < parts.length; i++) {
       const pa = parts[i];
+      if (pa.f !== p.f) continue;
       const dx = pa.x - posX, dy = pa.y - posY;
       const ty = invDet * (-planeY * dx + planeX * dy);
-      if (ty < 0.15) continue;
+      if (ty < 0.3) continue;                     // right in your face: would fill the screen
       const tx = invDet * (dirY * dx - dirX * dy);
       const sx = (Wd * 0.5) * (1 + tx / ty);
       const sy = horizon + (0.5 - pa.z) * Hd / ty;
-      const size = Math.max(1, (pa.size * Hd) / ty);
-      const life = pa.life / pa.maxLife;
-      const sh = Math.min(256, this.shade(ty) + 60) * (life > 1 ? 1 : life) | 0;
+      const life = pa.life / pa.maxLife, lf = life > 1 ? 1 : life;
+      // magic sparks carry their own light and shrink as they die; debris is lit like
+      // everything else and fades into the dark
+      const size = Math.min(Hd * 0.03, Math.max(1, (pa.size * Hd) / ty * (pa.float ? 0.4 + lf * 0.6 : 1)));
+      const sh = pa.float ? 256 : (Math.min(256, this.shade(ty) + 60) * lf) | 0;
       const c = U.shade(pa.color, sh);
       const hx0 = Math.max(0, (sx - size * 0.5) | 0), hx1 = Math.min(Wd, (sx + size * 0.5 + 1) | 0);
       const hy0 = Math.max(0, (sy - size * 0.5) | 0), hy1 = Math.min(Hd, (sy + size * 0.5 + 1) | 0);

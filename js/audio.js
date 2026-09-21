@@ -98,7 +98,26 @@
     lose()      { [392, 330, 262, 196].forEach((f, i) =>
                     tone({ freq: f, dur: 0.6, type: "sawtooth", gain: 0.16, delay: i * 0.18 })); },
     ping()      { tone({ freq: 1320, dur: 0.12, type: "sine", gain: 0.12 });
-                  tone({ freq: 1760, dur: 0.2, type: "sine", gain: 0.1, delay: 0.09 }); }
+                  tone({ freq: 1760, dur: 0.2, type: "sine", gain: 0.1, delay: 0.09 }); },
+    // floors
+    stairs()    { [0, 0.13, 0.26, 0.39].forEach((d) => noise({ dur: 0.08, freq: 300, to: 160, q: 1, gain: 0.12, delay: d })); },
+    ladder()    { [0, 0.16, 0.32].forEach((d, i) => tone({ freq: 190 + i * 25, to: 150, dur: 0.07, type: "square", gain: 0.08, delay: d })); },
+    // items
+    drop()      { tone({ freq: 240, to: 120, dur: 0.12, type: "sine", gain: 0.14 }); noise({ dur: 0.06, freq: 900, gain: 0.08 }); },
+    scroll()    { noise({ dur: 0.25, freq: 2600, to: 1400, q: 0.7, gain: 0.08 }); tone({ freq: 880, to: 1320, dur: 0.22, type: "sine", gain: 0.08, delay: 0.08 }); },
+    // magic
+    cast()      { tone({ freq: 520, to: 1040, dur: 0.22, type: "triangle", gain: 0.12 }); noise({ dur: 0.2, freq: 2400, to: 800, gain: 0.06 }); },
+    fire()      { noise({ dur: 0.35, freq: 900, to: 260, q: 0.6, gain: 0.2 }); tone({ freq: 180, to: 90, dur: 0.3, type: "sawtooth", gain: 0.07 }); },
+    frost()     { [1760, 2349, 2093].forEach((f, i) => tone({ freq: f, dur: 0.14, type: "sine", gain: 0.07, delay: i * 0.04 })); noise({ dur: 0.15, freq: 5200, q: 3, gain: 0.06 }); },
+    heal()      { [523, 659, 784, 1047, 1319].forEach((f, i) => tone({ freq: f, dur: 0.24, type: "sine", gain: 0.09, delay: i * 0.05 })); },
+    ward()      { tone({ freq: 330, to: 660, dur: 0.5, type: "triangle", gain: 0.12 }); tone({ freq: 495, to: 990, dur: 0.5, type: "sine", gain: 0.07, delay: 0.05 }); },
+    zap()       { noise({ dur: 0.3, freq: 3800, to: 900, q: 1.5, gain: 0.2 }); tone({ freq: 90, to: 60, dur: 0.25, type: "square", gain: 0.1 }); },
+    blink()     { tone({ freq: 1400, to: 300, dur: 0.18, type: "sine", gain: 0.12 }); tone({ freq: 300, to: 1600, dur: 0.18, type: "sine", gain: 0.1, delay: 0.12 }); },
+    boom()      { noise({ dur: 0.6, freq: 400, to: 60, q: 0.5, gain: 0.3 }); tone({ freq: 90, to: 35, dur: 0.5, type: "sine", gain: 0.25 }); },
+    spit()      { noise({ dur: 0.14, freq: 700, to: 1500, q: 2, gain: 0.1 }); },
+    learn()     { [392, 523, 659, 784].forEach((f, i) => tone({ freq: f, dur: 0.35, type: "triangle", gain: 0.1, delay: i * 0.09 })); },
+    levelup()   { [523, 659, 784, 1047].forEach((f, i) => tone({ freq: f, dur: 0.28, type: "square", gain: 0.07, delay: i * 0.08 }));
+                  tone({ freq: 1568, dur: 0.6, type: "triangle", gain: 0.12, delay: 0.34 }); }
   };
 
   A.play = function (name, volume) {

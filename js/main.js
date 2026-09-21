@@ -19,6 +19,7 @@
   }
 
   function hidePanels() {
+    $("relock").hidden = true;
     $("clickToPlay").hidden = true;
     $("pausePanel").hidden = true;
     $("endPanel").hidden = true;
@@ -28,7 +29,10 @@
     if (!game) {
       game = new MAZE.Game($("view"), $("hud"), {
         onEnd: onEnd,
-        onMenu: function () { if (!game.ended) { game.paused = true; $("pausePanel").hidden = false; } }
+        onMenu: function () { if (!game.ended) { game.paused = true; $("pausePanel").hidden = false; } },
+        onChar: openChar,
+        onRelock: requestLock,
+        onMe: function () { MAZE.character.render(); }
       });
       MAZE.game = game;
       game.sensitivity = parseFloat($("inpSens").value) || 1;
@@ -82,13 +86,41 @@
     MAZE.audio.init();
     MAZE.audio.startAmbience();
     // spectators keep the mouse, to click players on the overhead map
-    if (!game.spectator) {
-      const v = $("view");
-      const p = v.requestPointerLock && v.requestPointerLock();
-      if (p && p.catch) p.catch(function () {});
-    }
+    if (!game.spectator) requestLock();
     game.paused = false;
     game.last = performance.now();
+  }
+
+  // Browsers can refuse to capture the mouse: from an Esc keypress, or for about a
+  // second after it was last released. Mouse-look only works while it is captured, so
+  // if the request fails, say so and let a click try again.
+  function requestLock() {
+    const v = $("view");
+    $("relock").hidden = true;
+    try {
+      const p = v.requestPointerLock && v.requestPointerLock();
+      if (p && p.catch) p.catch(showRelock);
+    } catch (e) { showRelock(); }
+    clearTimeout(requestLock._t);
+    requestLock._t = setTimeout(function () { if (document.pointerLockElement !== v) showRelock(); }, 500);
+  }
+  function showRelock() {
+    if (!game || !game.running || game.ended || game.spectator || game.charOpen) return;
+    if (document.pointerLockElement === $("view")) return;
+    if (!$("pausePanel").hidden || !$("clickToPlay").hidden || !$("endPanel").hidden) return;
+    $("relock").hidden = false;
+  }
+
+  // the character sheet takes the mouse; closing it hands the mouse back to the game
+  function openChar() {
+    if (!game || game.ended) return;
+    if (!MAZE.character.open(game)) return;
+    if (document.exitPointerLock) document.exitPointerLock();
+  }
+  function closeChar() {
+    if (!MAZE.character.isOpen()) return;
+    MAZE.character.close();
+    if (game && !game.ended) lockPointer();
   }
 
   function statRows(host, rows) {
@@ -103,6 +135,7 @@
   }
 
   function onEnd(result, g) {
+    MAZE.character.close();
     if (document.exitPointerLock) document.exitPointerLock();
     document.title = "MAZE";
     const me = result.players.find((p) => p.seat === g.seat) || result.players[0];
@@ -119,7 +152,8 @@
         : "The maze keeps you. " + g.level.name + " wins this round.";
       const rows = [
         ["Time", U.fmtTime(s.time)],
-        ["Blobs slain", String(s.kills)],
+        ["Level reached", String(s.level || 1)],
+        ["Monsters slain", String(s.kills)],
         ["Treasure", s.treasure + " / " + result.totalTreasure],
         ["Secrets found", String(s.secrets)],
         ["Damage taken", String(Math.round(s.damage))]
@@ -162,18 +196,17 @@
     switch (act) {
       case "new":
         editor.snapshot();
-        editor.level = L.create(+$("inpCols").value || 25, +$("inpRows").value || 19, $("inpName").value || "Untitled Maze");
-        editor.render();
+        editor.setLevel(L.create(+$("inpCols").value || 25, +$("inpRows").value || 19, $("inpName").value || "Untitled Maze", +$("inpFloors").value || 1));
         break;
       case "generate": {
         editor.snapshot();
         const name = $("inpName").value || "Generated Maze";
-        editor.level = L.generate({
+        editor.setLevel(L.generate({
           cols: +$("inpCols").value || 25,
           rows: +$("inpRows").value || 19,
+          floors: U.clamp(+$("inpFloors").value || 1, 1, MAZE.MAX_FLOORS),
           name: name
-        });
-        editor.render();
+        }));
         break;
       }
       case "resize":
@@ -184,7 +217,7 @@
         break;
       case "clear":
         editor.snapshot();
-        L.clear(editor.level);
+        L.clear(editor.level, editor.floor);   // just the floor you are looking at
         editor.render();
         break;
       case "undo": editor.undo(); break;
@@ -224,15 +257,29 @@
 
   function loadIntoEditor(level) {
     editor.snapshot();
-    editor.level = level;
-    editor.syncInputs();
-    editor.render();
+    editor.setLevel(level);
   }
 
   // ---------------------------------------------------------------- go --
   function boot() {
     MAZE.buildTextures();
     MAZE.buildSprites();
+
+    // the Monster Maker hands finished monsters to the editor to place
+    MAZE.monsters.init({
+      onPlace: function (m) {
+        editor.buildPalette();
+        editor.select("monster", m.uid);
+        flash("Painting " + m.name + " — click the maze to place it.");
+      },
+      onChange: function (m) {
+        // an edited monster that the current maze already uses is updated in the maze too
+        if (m && (editor.level.monsters || []).some((o) => o.uid === m.uid)) L.addMonster(editor.level, m);
+        editor.buildPalette();
+        editor.render();
+      }
+    });
+    MAZE.character.onClose = closeChar;
 
     editor = new MAZE.Editor();
     MAZE.editor = editor;
@@ -255,6 +302,7 @@
         if (act === "toLobby") { showEditor(); MAZE.online.showLobby(); return; }
         if (act === "leaveMatch") { showEditor(); MAZE.online.leaveRoom(); return; }
         if (act === "abort") { MAZE.net.send({ t: "abort" }); return; }
+        if (act === "closeChar") { closeChar(); return; }
         topbarAction(act);
       });
     });
@@ -293,10 +341,14 @@
       if (game) game.sensitivity = parseFloat(this.value);
     });
 
+    $("relock").addEventListener("mousedown", function (e) { e.preventDefault(); requestLock(); });
+    document.addEventListener("pointerlockerror", showRelock);
     document.addEventListener("pointerlockchange", function () {
       if (!game || !game.running) return;
+      if (document.pointerLockElement === $("view")) { $("relock").hidden = true; return; }
       if (document.pointerLockElement !== $("view")) {
-        if (!game.ended) {
+        if (!game.ended && !game.charOpen && !game.spectator) {
+          $("relock").hidden = true;             // the pause menu has its own RESUME
           game.paused = true;
           for (const k in game.keys) game.keys[k] = 0;
           $("pausePanel").hidden = false;
