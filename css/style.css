@@ -148,6 +148,8 @@ label.num input{width:52px}
 
 /* ---------- online ---------- */
 body.is-online .soloOnly, body:not(.is-online) .onlineOnly, body:not(.is-host) .hostOnly{display:none !important}
+body.is-spectator .playOnly, body:not(.is-spectator) .specOnly{display:none !important}
+body.is-spectator #view{cursor:pointer}
 button.online{background:linear-gradient(180deg,#5de3d5,#2fb3a6);color:#04211e;border-color:#23877d}
 button.online:hover{background:linear-gradient(180deg,#78efe3,#3cc5b7)}
 button:disabled{opacity:.45;cursor:not-allowed;transform:none}
@@ -201,6 +203,8 @@ button:disabled{opacity:.45;cursor:not-allowed;transform:none}
 .seatName{font-size:14px;font-weight:700;margin:4px 0 2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .seatState{font-size:11px;color:var(--green)}
 .seatState.off{color:var(--dim)}
+.seatState.watch{color:var(--teal)}
+.modePick[data-for=role] .modeBtn.on{border-color:var(--teal);background:#10241f;box-shadow:inset 0 0 0 1px var(--teal)}
 .seatSpawn{font-size:10px;color:var(--dim);margin-top:3px}
 .lobbyResult{margin:8px 0;text-align:left}
 .endTable{margin:0 0 18px}

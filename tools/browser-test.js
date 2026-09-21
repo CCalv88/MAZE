@@ -102,7 +102,8 @@ const check = (cond, msg) => { if (!cond) throw new Error('FAILED: ' + msg); con
     await until(A, '!!(window.MAZE && MAZE.editor && MAZE.online)', 'page boot');
     const code = await A.eval('document.getElementById("mazeCode").textContent');
     check(/^[0-9A-Z]{6}$/.test(code), 'editor shows a maze code: ' + code);
-    check(await A.eval('MAZE.Level.findStarts(MAZE.editor.level).filter(Boolean).length') >= 2, 'the generated maze has extra player starts');
+    // a few random mazes have no fair spot for extra starts (players 2-4 then start beside P1), so use a fixed seed
+    check(await A.eval('MAZE.Level.findStarts(MAZE.Level.generate({ seed: 4, cols: 25, rows: 19 })).filter(Boolean).length') === 4, 'the generator places extra player starts');
     await A.shot('1-editor');
     await A.eval('document.getElementById("btnTest").click()');
     await until(A, '!document.getElementById("gameScreen").hidden', 'solo game screen');
@@ -184,6 +185,42 @@ const check = (cond, msg) => { if (!cond) throw new Error('FAILED: ' + msg); con
     await A.eval('MAZE.net.send({ t: "abort" })');
     await until(B, '!document.getElementById("lobbyPanel").hidden', 'B back in the lobby after abort');
     check(true, 'host ended the match; guest is back in the lobby');
+
+    console.log('spectate');
+    await until(A, '!document.getElementById("lobbyPanel").hidden', 'A back in the lobby');
+    await A.eval('document.querySelector(\'.modePick[data-for="role"] [data-role="watch"]\').click()');
+    await until(B, '/spectate/.test(document.getElementById("lobbySeats").textContent)', 'Bob sees that Alice will spectate');
+    check(await A.eval('document.getElementById("btnStartMatch").textContent') === 'START & WATCH', 'host is set to watch');
+    await A.eval('document.getElementById("btnStartMatch").click()');
+    await until(A, '!document.getElementById("gameScreen").hidden && MAZE.game.spectator', 'Alice spectating');
+    await until(B, '!document.getElementById("gameScreen").hidden && MAZE.game.online && !MAZE.game.spectator', 'Bob playing');
+    for (const pg of [A, B]) await pg.eval('document.querySelector("#clickToPlay button.primary:not([hidden])") && [...document.querySelectorAll("#clickToPlay [data-act=lock]")].find(b => b.offsetParent).click()');
+    check(await A.eval('MAZE.game.others.length === 1 && !MAZE.game.otherMap.has(0)'), 'Alice has no body in the match; Bob is the only player');
+    await wait(3400);
+    await B.eval('MAZE.game.player.ang = 0; MAZE.game.keys.w = 1');
+    await wait(700);
+    await B.eval('MAZE.game.keys.w = 0');
+    await wait(400);
+    check(await A.eval('MAZE.game.viewMode') === 'map', 'spectating starts on the overhead map');
+    const bobOnMap = await A.eval('MAZE.game.hud._pick.players.find(p => p.seat === 1)');
+    check(!!bobOnMap, 'Bob is drawn on the overhead map');
+    const moved = await A.eval('MAZE.game.otherMap.get(1).x');
+    check(moved > 3.6, 'the map follows Bob as he walks (x ' + moved.toFixed(2) + ')');
+    await A.shot('7-spectate-overhead');
+    await A.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: Math.round(bobOnMap.x), y: Math.round(bobOnMap.y), button: 'left', clickCount: 1 });
+    await A.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: Math.round(bobOnMap.x), y: Math.round(bobOnMap.y), button: 'left', clickCount: 1 });
+    await until(A, 'MAZE.game.viewMode === "pov" && MAZE.game.camera().seat === 1', 'clicking Bob shows his eyes');
+    check(true, 'clicking Bob on the map switches to his view');
+    await B.eval('MAZE.game.player.ang = Math.PI * 0.9');
+    await wait(500);
+    check(Math.abs(await A.eval('MAZE.game.camera().ang') - Math.PI * 0.9) < 0.3, 'the spectator camera turns with Bob');
+    await A.shot('8-spectate-bob-pov');
+    await A.send('Input.dispatchKeyEvent', { type: 'keyDown', code: 'Tab', key: 'Tab', windowsVirtualKeyCode: 9 });
+    await A.send('Input.dispatchKeyEvent', { type: 'keyUp', code: 'Tab', key: 'Tab', windowsVirtualKeyCode: 9 });
+    await until(A, 'MAZE.game.viewMode === "map"', 'Tab back to the overhead map');
+    check(true, 'Tab toggles back to the overhead map');
+    await A.eval('MAZE.net.send({ t: "abort" })');
+    await until(B, '!document.getElementById("lobbyPanel").hidden', 'B back in the lobby');
 
     const errs = A.errors.concat(B.errors).filter(e => !/pointer ?lock|requestPointerLock|AudioContext/i.test(e));
     check(errs.length === 0, 'no page errors' + (errs.length ? ':\n' + errs.join('\n') : ''));

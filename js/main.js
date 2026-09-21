@@ -26,7 +26,10 @@
 
   function ensureGame() {
     if (!game) {
-      game = new MAZE.Game($("view"), $("hud"), { onEnd: onEnd });
+      game = new MAZE.Game($("view"), $("hud"), {
+        onEnd: onEnd,
+        onMenu: function () { if (!game.ended) { game.paused = true; $("pausePanel").hidden = false; } }
+      });
       MAZE.game = game;
       game.sensitivity = parseFloat($("inpSens").value) || 1;
       game.setQuality(parseFloat($("selQuality").value) || 0.7);
@@ -52,7 +55,7 @@
   // Solo: the whole world runs right here in the tab.
   function startGame(level) {
     soloLevel = L.clone(level);
-    document.body.classList.remove("is-online");
+    document.body.classList.remove("is-online", "is-spectator");
     const sim = new MAZE.Sim(level, { mode: "solo" });
     sim.addPlayer(0, "You");
     enterGame(sim.fullState(), 0, new MAZE.LocalLink(sim, 0), "Find the exit. Do not get eaten.");
@@ -61,11 +64,14 @@
   // Online: the server runs the world; msg is its "start" message.
   function startOnline(msg) {
     document.body.classList.add("is-online");
+    document.body.classList.toggle("is-spectator", !!msg.spectator);
     const mode = MAZE.MODES[msg.full.mode];
-    const lead = msg.full.mode === "versus"
-      ? "Competitive — first one out wins. Watch your back."
-      : "Co-op — everyone has to get out. Stick together.";
-    enterGame(msg.full, msg.seat, new MAZE.NetLink(MAZE.net, msg.seat), lead);
+    const lead = msg.spectator
+      ? "You are watching your maze. See everyone from above, or through any player's eyes."
+      : msg.full.mode === "versus"
+        ? "Competitive — first one out wins. Watch your back."
+        : "Co-op — everyone has to get out. Stick together.";
+    enterGame(msg.full, msg.seat, new MAZE.NetLink(MAZE.net, msg.seat, msg.spectator), lead);
     game.playerName = (msg.names && msg.names[msg.seat]) || "You";
     game.opts.names = msg.names || {};
     if (mode) document.title = "MAZE · " + mode.name;
@@ -75,9 +81,12 @@
     hidePanels();
     MAZE.audio.init();
     MAZE.audio.startAmbience();
-    const v = $("view");
-    const p = v.requestPointerLock && v.requestPointerLock();
-    if (p && p.catch) p.catch(function () {});
+    // spectators keep the mouse, to click players on the overhead map
+    if (!game.spectator) {
+      const v = $("view");
+      const p = v.requestPointerLock && v.requestPointerLock();
+      if (p && p.catch) p.catch(function () {});
+    }
     game.paused = false;
     game.last = performance.now();
   }
@@ -126,7 +135,7 @@
         const winner = result.players.find((p) => p.seat === result.winner);
         const iWon = result.winner === g.seat;
         title.textContent = iWon ? "YOU WIN" : winner ? (winner.name + " WINS").toUpperCase() : "MATCH OVER";
-        title.className = iWon ? "" : "dead";
+        title.className = iWon || g.spectator ? "" : "dead";
         lead.textContent = iWon ? "First one out of " + g.level.name + ". Nobody could stop you."
           : winner ? winner.name + " got out of " + g.level.name + " first." : "Nobody made it out.";
       } else {

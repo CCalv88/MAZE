@@ -129,6 +129,10 @@
           <button class="modeBtn" data-mode="coop"><b>Co-op</b><span>Everyone out. Revive fallen friends.</span></button>
           <button class="modeBtn" data-mode="versus"><b>Competitive</b><span>Weapons hurt players. First out wins.</span></button>
         </div>
+        <div class="modePick hostOnly" data-for="role">
+          <button class="modeBtn on" data-role="play"><b>I'll play</b><span>Run your own maze with everyone else.</span></button>
+          <button class="modeBtn" data-role="watch"><b>I'll spectate</b><span>Watch from above, or through any player's eyes.</span></button>
+        </div>
         <div id="lobbySeats" class="seats"></div>
         <div id="lobbyResult" class="lobbyResult" hidden></div>
         <div id="lobbyStatus" class="msg"></div>
@@ -147,7 +151,13 @@
       <div class="panel">
         <h1>READY</h1>
         <p id="readyLead" class="lead">Find the exit. Do not get eaten.</p>
-        <div class="keys">
+        <div class="keys specOnly">
+          <div><kbd>Tab</kbd> overhead map ↔ a player's eyes</div>
+          <div><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd><kbd>4</kbd> or <kbd>Click</kbd> a player: watch them</div>
+          <div><kbd>←</kbd><kbd>→</kbd> or <kbd>Wheel</kbd> next / previous player</div>
+          <div><kbd>Esc</kbd> menu</div>
+        </div>
+        <div class="keys playOnly">
           <div><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> move</div>
           <div><kbd>Mouse</kbd> look · <kbd>Shift</kbd> sprint</div>
           <div><kbd>L-Click</kbd> attack · <kbd>R-Click</kbd> raise shield</div>
@@ -155,7 +165,8 @@
           <div><kbd>E</kbd> open door · <kbd>Tab</kbd> map · <kbd>Esc</kbd> pause</div>
           <div class="onlineOnly"><kbd>F</kbd> ping a spot for everyone · <kbd>E</kbd> (hold) revive a teammate</div>
         </div>
-        <button class="primary big" data-act="lock">CLICK TO PLAY</button>
+        <button class="primary big playOnly" data-act="lock">CLICK TO PLAY</button>
+        <button class="primary big specOnly" data-act="lock">START WATCHING</button>
         <button class="soloOnly" data-act="quit">Back to editor</button>
         <button class="onlineOnly" data-act="leaveMatch">Leave room</button>
       </div>

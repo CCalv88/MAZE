@@ -33,11 +33,13 @@
   LocalLink.prototype.close = function () {};
 
   // Online: send where we are twenty times a second, collect whatever the server sent.
-  function NetLink(net, seat) {
+  // spectator: the host watching the match; it has no body, so it never sends moves
+  function NetLink(net, seat, spectator) {
     this.net = net;
     this.seat = seat;
     this.smooth = true;
     this.online = true;
+    this.spectator = !!spectator;
     this.inbox = [];
     this.sendT = 0;
     this.last = null;
@@ -57,7 +59,7 @@
   };
   NetLink.prototype.sendPos = function () {
     const i = this.last;
-    if (!i) return;
+    if (!i || this.spectator) return;
     this.net.send({ t: "pos", x: r3(i.x), y: r3(i.y), ang: r3(i.ang), pitch: r3(i.pitch), blk: i.blk, use: i.use, w: i.w, ep: i.ep });
   };
   // the server resolves a swing with the facing it last heard, so bring it up to date first
@@ -96,6 +98,9 @@
     this.seat = seat;
     this.mode = full.mode;
     this.online = !!link.online;
+    this.spectator = !!link.spectator;
+    this.viewMode = "map";          // spectators: "map" (overhead) or "pov" (a player's eyes)
+    this.matchTime = full.time || 0;
     this.level = { name: full.name };
     this.cols = full.cols; this.rows = full.rows;
     this.walls = Uint8Array.from(full.walls);
@@ -144,6 +149,8 @@
       this.others.push(v);
       this.otherMap.set(pl.seat, v);
     }
+    // a spectator has no body: treat them as already out of the maze, watching
+    if (this.spectator) me = { x: full.cols / 2, y: full.rows / 2, ang: 0, hp: P.maxHp, ep: 1, escaped: true };
     me = me || { x: 1.5, y: 1.5, ang: 0, hp: P.maxHp, ep: 1 };
 
     this.player = {
@@ -163,6 +170,11 @@
     if (this.player.escaped) this.nextSpectate(1);
 
     this.light = { dist: 8, ambient: 0.075 };
+    if (this.spectator) {
+      this.seen.fill(2);            // the maze's maker knows every corner of it
+      this.message("Spectating. Tab: overhead / player view · 1-4 or click: pick a player.", "#4fd6c8");
+      return this;
+    }
     this.markSeen(Math.floor(this.player.x), Math.floor(this.player.y), 2);
     this.message("Find the exit portal.", "#4fd6c8");
     if (this.mode === "versus") this.message("Competitive: first one out wins. Weapons hurt players.", "#ff6a8a");
@@ -292,7 +304,7 @@
   // teammate who is still inside.
   Game.prototype.camera = function () {
     const p = this.player;
-    if (p.escaped && this.spectate >= 0) {
+    if ((p.escaped || this.spectator) && this.spectate >= 0) {
       const o = this.otherMap.get(this.spectate);
       if (o && o.visible()) {
         const c = this._cam || (this._cam = {});
@@ -311,6 +323,29 @@
     if (!live.length) { this.spectate = -1; return; }
     const i = live.indexOf(this.spectate);
     this.spectate = live[(i + (dir || 1) + live.length) % live.length];
+  };
+
+  // spectator: look through this player's eyes
+  Game.prototype.watch = function (seat) {
+    const o = this.otherMap.get(seat);
+    if (!o || !o.visible()) return false;
+    this.spectate = seat;
+    this.viewMode = "pov";
+    return true;
+  };
+
+  // What the HUD shows as "you": yourself, or when spectating, the player being watched
+  // (only what everyone can see of them: health, weapon, torch, shield).
+  Game.prototype.viewPlayer = function () {
+    if (!this.spectator) return this.player;
+    const o = this.otherMap.get(this.spectate);
+    const v = this._view || (this._view = { maxHp: P.maxHp, stamina: P.maxStamina, winded: false, arrows: 0, swingDur: 0.3, bob: 0, bobView: 0, swayX: 0, swayY: 0.2, hitMarks: [], has: {}, weapons: {} });
+    if (!o) { v.hp = 0; v.dead = true; v.escaped = true; v.name = ""; return v; }
+    v.hp = o.hp; v.dead = o.dead; v.escaped = o.escaped; v.name = o.name; v.seat = o.seat;
+    v.weapon = o.weapon; v.swingT = o.swingT; v.blocking = o.blocking; v.blockAmt = o.blocking ? 1 : 0;
+    v.hurtFlash = o.flash * 0.5; v.ang = o.ang;
+    v.has.torch = o.torch; v.has.shield = o.hasShield; v.has.key = false; v.has.boots = false;
+    return v;
   };
 
   Game.prototype.renderables = function () {
@@ -344,9 +379,12 @@
       self.last = ts;
       // online the world does not wait for you, so keep listening while paused
       if (!self.ended && (!self.paused || self.online)) self.update(dt);
-      const t0 = performance.now();
-      self.renderer.render(self);
-      self.renderer.adapt(performance.now() - t0);
+      // the overhead map is all HUD, so the 3D view can rest while it is up
+      if (!(self.spectator && self.viewMode === "map")) {
+        const t0 = performance.now();
+        self.renderer.render(self);
+        self.renderer.adapt(performance.now() - t0);
+      }
       self.hud.draw(self);
       requestAnimationFrame(self._frame);
     };
@@ -391,14 +429,18 @@
       this.exit.t += dt;
       this.exit.frame = ((this.exit.t * 10) | 0) % 6;
     }
-    if (p.escaped && (this.spectate < 0 || !this.otherMap.get(this.spectate) || !this.otherMap.get(this.spectate).visible())) this.nextSpectate(1);
+    if ((p.escaped || this.spectator) && (this.spectate < 0 || !this.otherMap.get(this.spectate) || !this.otherMap.get(this.spectate).visible())) {
+      this.nextSpectate(1);
+      if (this.spectate < 0 && this.spectator) this.viewMode = "map";   // nobody left inside to watch
+    }
 
     this.separateBodies();
-    this.updateVisibility();
+    if (!this.spectator) this.updateVisibility();
 
-    // torchlight flicker
-    const base = p.has.torch ? 14.5 : 8;
-    const flick = p.has.torch ? 1 + Math.sin(this.time * 11) * 0.025 + Math.sin(this.time * 4.3) * 0.02 : 1;
+    // torchlight flicker, for whoever's eyes we are looking through
+    const torch = this.viewPlayer().has.torch;
+    const base = torch ? 14.5 : 8;
+    const flick = torch ? 1 + Math.sin(this.time * 11) * 0.025 + Math.sin(this.time * 4.3) * 0.02 : 1;
     this.light.dist = base * flick;
   };
 
@@ -424,6 +466,7 @@
   Game.prototype.applySnap = function (s) {
     const now = performance.now(), smooth = this.link.smooth;
     this.freeze = s.freeze || 0;
+    this.matchTime = s.time || this.matchTime;
 
     const live = this._live || (this._live = new Set());
     live.clear();
@@ -588,6 +631,7 @@
         break;
       case "door": {
         this.walls[ev.y * this.cols + ev.x] = W.EMPTY;
+        this.wallRev = (this.wallRev || 0) + 1;       // the overhead map redraws its walls
         this.soundAt("door", ev.x + 0.5, ev.y + 0.5, 30);
         this.splat(ev.x + 0.5, ev.y + 0.5, 0.5, "#c99b4a", 16, 1.8);
         this.message(ev.s === me ? "The door swings open." : this.nameOf(ev.s) + " unlocked a door.", "#c99b4a");
@@ -649,6 +693,7 @@
   };
 
   Game.prototype.iWon = function (r) {
+    if (this.spectator) return r.outcome !== "wiped";
     if (r.mode === "versus") return r.winner === this.seat;
     return r.outcome === "escaped";
   };
@@ -865,6 +910,13 @@
   };
 
   // ------------------------------------------------------------- input --
+  Game.prototype.toggleView = function () {
+    if (this.viewMode === "map") {
+      if (this.spectate < 0) this.nextSpectate(1);
+      if (this.spectate >= 0) this.viewMode = "pov";
+    } else this.viewMode = "map";
+  };
+
   Game.prototype.setWeapon = function (name) {
     const p = this.player;
     if (!p.weapons[name] || p.weapon === name || p.dead) return;
@@ -891,6 +943,16 @@
     this._onKeyDown = function (e) {
       if (!self.running) return;
       const c = e.code;
+      if (self.spectator) {
+        if (c === "Tab" || c === "KeyM" || c === "Space") self.toggleView();
+        else if (/^Digit[1-4]$/.test(c)) { if (!self.watch(+c.slice(5) - 1)) self.message("Player " + c.slice(5) + " is not in the maze.", "#8a93a7"); }
+        else if (c === "ArrowRight" || c === "KeyD" || c === "KeyE") { self.nextSpectate(1); if (self.spectate >= 0) self.viewMode = "pov"; }
+        else if (c === "ArrowLeft" || c === "KeyA" || c === "KeyQ") { self.nextSpectate(-1); if (self.spectate >= 0) self.viewMode = "pov"; }
+        else if (c === "Escape") { if (self.opts.onMenu) self.opts.onMenu(); }
+        else return;
+        e.preventDefault();
+        return;
+      }
       if (c === "KeyW" || c === "ArrowUp") k.w = 1;
       else if (c === "KeyS" || c === "ArrowDown") k.s = 1;
       else if (c === "KeyA") k.a = 1;
@@ -931,6 +993,13 @@
     };
     this._onDown = function (e) {
       if (self.paused || self.ended) return;
+      if (self.spectator) {
+        if (self.viewMode === "map") {
+          const seat = self.hud.pickAt(e.offsetX, e.offsetY);
+          if (seat >= 0) self.watch(seat);
+        } else if (e.button === 0 || e.button === 2) self.nextSpectate(e.button === 0 ? 1 : -1);
+        return;
+      }
       if (self.player.escaped) { if (e.button === 0 || e.button === 2) self.nextSpectate(e.button === 0 ? 1 : -1); return; }
       if (e.button === 0) self.attack();
       if (e.button === 1 && self.online) { self.ping(); e.preventDefault(); }
@@ -939,6 +1008,7 @@
     this._onUp = function (e) { if (e.button === 2) k.block = 0; };
     this._onWheel = function (e) {
       if (self.paused || self.ended) return;
+      if (self.spectator) { if (self.viewMode === "pov") self.nextSpectate(e.deltaY > 0 ? 1 : -1); e.preventDefault(); return; }
       self.cycleWeapon(e.deltaY > 0 ? 1 : -1);
       e.preventDefault();
     };

@@ -142,7 +142,10 @@ function cleanName(n) { return String(n || '').replace(/[^\w \-'!?.]/g, '').trim
 function cleanMode(m) { return m === 'versus' ? 'versus' : 'coop'; }
 
 function roster(room) {
-  return room.seats.map((s, seat) => s && { seat, name: s.name, online: isOnline(room, s.pid), playing: !!(room.sim && room.sim.player(seat)) }).filter(Boolean);
+  return room.seats.map((s, seat) => s && {
+    seat, name: s.name, online: isOnline(room, s.pid),
+    playing: !!(room.sim && room.sim.player(seat)), watching: !!(room.sim && room.watcher === s.pid)
+  }).filter(Boolean);
 }
 // The creator runs the lobby. If they drop off, whoever is next still here can, so a
 // room never gets stuck waiting for a host who closed the tab.
@@ -154,24 +157,31 @@ function controller(room) {
 function hostSeat(room) { return seatOf(room, controller(room)); }
 function mazeInfo(room) { return { code: room.maze.code, name: room.maze.level.name, level: JSON.parse(L.toJSON(room.maze.level)) }; }
 function lobbyMsg(room) {
-  return { t: 'lobby', players: roster(room), mode: room.mode, state: room.sim ? 'playing' : 'lobby', hostSeat: hostSeat(room), maze: mazeInfo(room), result: room.lastResult || null };
+  return { t: 'lobby', players: roster(room), mode: room.mode, spectate: !!room.spectate, state: room.sim ? 'playing' : 'lobby', hostSeat: hostSeat(room), maze: mazeInfo(room), result: room.lastResult || null };
 }
 function roomMsg(room, seat) {
   return Object.assign(lobbyMsg(room), { t: 'room', code: room.code, seat, host: room.seats[seat].pid === controller(room) });
 }
 function pushLobby(room) { broadcast(room, lobbyMsg(room)); }
 
-function sendStart(room, ws, seat) {
+// spectator: the host watching instead of playing; they get the world but no body in it
+function sendStart(room, ws, seat, spectator) {
   const names = {};
   room.seats.forEach((s, i) => { if (s) names[i] = s.name; });
-  send(ws, { t: 'start', seat, full: room.sim.fullState(), names, round: room.round });
+  send(ws, { t: 'start', seat, spectator: !!spectator, full: room.sim.fullState(), names, round: room.round });
 }
+const watching = (room, pid) => !!(room.sim && room.watcher && room.watcher === pid);
 
 function startMatch(room) {
   const sim = new MAZE.Sim(room.maze.level, { mode: room.mode, freeze: 3 });
-  room.seats.forEach((s, seat) => { if (s && isOnline(room, s.pid)) sim.addPlayer(seat, s.name); });
+  room.seats.forEach((s, seat) => {
+    if (!s || !isOnline(room, s.pid)) return;
+    if (room.spectate && s.pid === room.host) return;           // the host is watching, not playing
+    sim.addPlayer(seat, s.name);
+  });
   if (!sim.players.some(Boolean)) return false;
   room.sim = sim;
+  room.watcher = room.spectate ? room.host : null;
   room.round = (room.round || 0) + 1;
   room.lastTick = Date.now();
   room.lastSeen = Date.now();
@@ -179,6 +189,7 @@ function startMatch(room) {
   for (const [w, m] of members(room)) {
     const seat = seatOf(room, m.pid);
     if (seat >= 0 && sim.player(seat)) sendStart(room, w, seat);
+    else if (seat >= 0 && m.pid === room.watcher) sendStart(room, w, seat, true);
   }
   pushLobby(room);
   console.log(`start ${room.code} round ${room.round} mode ${room.mode} maze ${room.maze.code} players ${sim.players.filter(Boolean).length}`);
@@ -187,6 +198,7 @@ function startMatch(room) {
 
 function endMatch(room, result) {
   room.sim = null;
+  room.watcher = null;
   room.seats = room.seats.map(s => (s && s.left && !isOnline(room, s.pid) ? null : s));   // quitters free their seats
   room.lastResult = result || null;
   room.updated = Date.now();
@@ -231,6 +243,7 @@ function handle(ws, msg) {
     console.log(`join ${code} seat ${seat} members ${members(room).length}`);
     send(ws, roomMsg(room, seat));
     if (room.sim && room.sim.player(seat)) { room.sim.setAway(seat, false); sendStart(room, ws, seat); }
+    else if (watching(room, pid)) sendStart(room, ws, seat, true);
     pushLobby(room);
     return;
   }
@@ -256,6 +269,10 @@ function handle(ws, msg) {
       if (!isHost || room.sim) return;
       room.mode = cleanMode(msg.mode);
       return pushLobby(room);
+    case 'spectate':                                           // the maze's maker can watch instead of play
+      if (room.host !== meta.pid || room.sim) return;
+      room.spectate = !!msg.on;
+      return pushLobby(room);
     case 'maze': {
       if (!isHost || room.sim) return;
       try { room.maze = publish(msg.level); } catch (e) { return send(ws, { t: 'error', msg: e.message }); }
@@ -264,7 +281,7 @@ function handle(ws, msg) {
     }
     case 'start':
       if (!isHost || room.sim) return;
-      if (!startMatch(room)) send(ws, { t: 'error', msg: 'Nobody is here to play.' });
+      if (!startMatch(room)) send(ws, { t: 'error', msg: room.spectate ? 'Nobody to watch yet: invite someone, or switch to playing.' : 'Nobody is here to play.' });
       return;
     case 'abort':
       if (!isHost || !room.sim) return;
@@ -291,8 +308,8 @@ setInterval(() => {
     if (!sim) continue;
     const dt = Math.min(0.1, (now - room.lastTick) / 1000);
     room.lastTick = now;
-    const here = members(room).map(([w, m]) => [w, seatOf(room, m.pid)]).filter(([, s]) => s >= 0 && sim.player(s));
-    if (!here.length) {                                       // nobody watching: hold the world still
+    const here = members(room).map(([w, m]) => [w, seatOf(room, m.pid), m.pid]).filter(([, s, pid]) => s >= 0 && (sim.player(s) || pid === room.watcher));
+    if (!here.some(([, s]) => sim.player(s))) {               // no players left: hold the world still
       if (now - room.lastSeen > MATCH_IDLE_MS) endMatch(room, null);
       continue;
     }

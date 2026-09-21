@@ -570,7 +570,8 @@
     const ps = [], bs = [], as = [];
     for (const p of this.players) {
       if (!p) continue;
-      const flags = (p.dead ? 1 : 0) | (p.escaped ? 2 : 0) | (p.blocking ? 4 : 0) | (p.away ? 8 : 0) | (p.moving ? 16 : 0) | (p.invuln > 0.25 ? 32 : 0);
+      const flags = (p.dead ? 1 : 0) | (p.escaped ? 2 : 0) | (p.blocking ? 4 : 0) | (p.away ? 8 : 0) | (p.moving ? 16 : 0) | (p.invuln > 0.25 ? 32 : 0) |
+        (p.has.torch ? 64 : 0) | (p.has.shield ? 128 : 0);
       ps.push([p.seat, round2(p.x), round2(p.y), round2(p.ang), round2(p.pitch), Math.ceil(p.hp), flags, WEAPON_IDX[p.weapon], p.epoch,
         p.reviveT > 0 ? round2(p.reviveT / P.reviveTime) : 0, p.respawnT > 0 ? Math.ceil(p.respawnT) : 0]);
     }

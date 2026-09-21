@@ -146,6 +146,7 @@
     const f = row[6];
     this.dead = !!(f & 1); this.escaped = !!(f & 2); this.blocking = !!(f & 4);
     this.away = !!(f & 8); this.moving = !!(f & 16); this.shielded = !!(f & 32);
+    this.torch = !!(f & 64); this.hasShield = !!(f & 128);
     this.weapon = MAZE.Sim.WEAPON_BY_IDX[row[7]] || "fist";
     this.revive = row[9] || 0;
     this.respawn = row[10] || 0;

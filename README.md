@@ -103,6 +103,15 @@ room open; the **Room** button in the top bar goes back), and presses **START**.
 **Join:** open the invite link, or press `⚑ PLAY ONLINE` and type the room code. Anyone who
 joins while a match is running plays from the next round.
 
+**Spectate:** the maze's maker can pick *I'll spectate* in the lobby (the button becomes
+**START & WATCH**) to run the match without playing in it. Spectators see everything:
+
+| | |
+| --- | --- |
+| Overhead map | The whole maze with its real wall textures and the secret walls marked. Every player shows as an icon in their colour, with the direction they face, their name and health. Blobs, items, arrows and pings show live, and a side panel lists everyone's health, weapon and status. |
+| Player view | Click a player (on the map or in the list), or press `1`–`4`, to see through their eyes, with their health, weapon, torchlight and minimap. |
+| Controls | `Tab` / `M` switches overhead ↔ player view · `←` `→`, the wheel or a click cycles players · `Esc` opens the menu (end the match, or leave). |
+
 | Mode | |
 | --- | --- |
 | **Co-op** | No friendly fire. The key opens doors for the whole team. A fallen player can be revived by a teammate holding `E` beside them for 1.6 s (back at 40 health); otherwise they respawn at their start after 14 s. Everyone has to reach the exit. If everyone is down at once and nobody is out, the party is wiped. |

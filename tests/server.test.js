@@ -164,6 +164,48 @@ test('a full round: lobby, mode, start, snapshots, combat, cheating, reconnect, 
   a.close(); b2.close();
 });
 
+test('the host can spectate: no body in the match, but the whole world arrives', async () => {
+  const host = await client();
+  send(host, { t: 'create', pid: 'watch-h', name: 'Maker', level: corridor(), mode: 'coop' });
+  const room = await until(host, 'room');
+  send(host, { t: 'spectate', on: true });
+  await until(host, m => m.t === 'lobby' && m.spectate, 'spectate on');
+
+  // spectating alone there is nobody to watch
+  send(host, { t: 'start' });
+  assert.match((await until(host, 'error')).msg, /Nobody to watch/);
+
+  const p = await client();
+  send(p, { t: 'join', code: room.code, pid: 'watch-p', name: 'Runner' });
+  await until(p, 'room');
+  send(p, { t: 'spectate', on: false });                       // guests cannot change it
+  await wait(80);
+  send(host, { t: 'start' });
+  const hs = await until(host, 'start'), ps = await until(p, 'start');
+  assert.equal(hs.spectator, true);
+  assert.equal(ps.spectator, false);
+  assert.deepEqual(hs.full.players.map(q => q.seat), [1], 'only the runner is in the world');
+  const snap = await until(host, 'snap');
+  assert.equal(snap.me, null, 'no private state for a spectator');
+  assert.equal(snap.s.p.length, 1);
+
+  // the spectator's moves and swings do nothing
+  send(host, { t: 'pos', x: 5.5, y: 2.5, ang: 0, pitch: 0, ep: 1 });
+  send(host, { t: 'atk' });
+  const lobbyNow = await until(p, m => m.t === 'lobby' && m.players.some(q => q.watching), 'roster shows the watcher');
+  assert.ok(lobbyNow.players.find(q => q.seat === 0).watching);
+
+  // a spectator who reconnects is sent back into watching
+  host.terminate();
+  const host2 = await client();
+  send(host2, { t: 'join', code: room.code, pid: 'watch-h', name: 'Maker' });
+  const again = await until(host2, 'start');
+  assert.equal(again.spectator, true);
+  send(host2, { t: 'abort' });
+  await until(p, 'aborted');
+  host2.close(); p.close();
+});
+
 test('a match ends for everyone when the first player escapes', async () => {
   const a = await client(), b = await client();
   send(a, { t: 'create', pid: 'race-a', name: 'Ann', level: corridor(), mode: 'versus' });

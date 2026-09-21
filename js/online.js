@@ -114,6 +114,10 @@
     $("lobbyMazeCode").textContent = room.maze.code;
     setMode(room.mode, "lobby");
     document.querySelectorAll('.modePick[data-for="lobby"] .modeBtn').forEach(function (b) { b.disabled = !amHost() || room.state !== "lobby"; });
+    document.querySelectorAll('.modePick[data-for="role"] .modeBtn').forEach(function (b) {
+      b.classList.toggle("on", (b.dataset.role === "watch") === !!room.spectate);
+      b.disabled = room.state !== "lobby";
+    });
     drawPreview($("lobbyPreview"), room.maze.level);
 
     const level = room.maze.level;
@@ -135,11 +139,15 @@
       nm.textContent = p ? p.name : "Open seat";
       const st = document.createElement("div");
       st.className = "seatState";
-      st.textContent = !p ? "Waiting for a player" : !p.online ? "Offline" : room.state === "playing" ? (p.playing ? "In the maze" : "Joins next round") : "Ready";
+      const watcher = p && room.spectate && s === room.hostSeat;
+      st.textContent = !p ? "Waiting for a player" : !p.online ? "Offline"
+        : room.state === "playing" ? (p.watching ? "Spectating" : p.playing ? "In the maze" : "Joins next round")
+        : watcher ? "Will spectate" : "Ready";
       if (p && !p.online) st.classList.add("off");
+      if (watcher || (p && p.watching)) st.classList.add("watch");
       const sp = document.createElement("div");
       sp.className = "seatSpawn";
-      sp.textContent = s === 0 || starts[s] ? "Own start point" : "Starts beside P1";
+      sp.textContent = watcher ? "Watching, not playing" : s === 0 || starts[s] ? "Own start point" : "Starts beside P1";
       card.appendChild(top); card.appendChild(nm); card.appendChild(st); card.appendChild(sp);
       host.appendChild(card);
     }
@@ -157,13 +165,14 @@
 
     const btn = $("btnStartMatch");
     const playingNow = room.state === "playing";
-    const iPlay = playingNow && room.players.some(function (p) { return p.seat === mySeat() && p.playing; });
+    const iPlay = playingNow && room.players.some(function (p) { return p.seat === mySeat() && (p.playing || p.watching); });
     btn.disabled = !amHost() || playingNow;
-    btn.textContent = playingNow ? (iPlay ? "REJOIN MATCH" : "MATCH IN PROGRESS") : amHost() ? "START" : "WAITING FOR HOST";
+    btn.textContent = playingNow ? (iPlay ? "REJOIN MATCH" : "MATCH IN PROGRESS") : amHost() ? (room.spectate ? "START & WATCH" : "START") : "WAITING FOR HOST";
     if (iPlay) btn.disabled = false;
     const online = room.players.filter(function (p) { return p.online; }).length;
     let status = "";
     if (playingNow && !iPlay) status = "A match is running. You are in the next round.";
+    else if (!playingNow && amHost() && room.spectate) status = online < 2 ? "You are spectating: share the room code and wait for at least one player." : (online - 1) + " player" + (online > 2 ? "s" : "") + " ready. You will watch.";
     else if (!playingNow && amHost()) status = online < 2 ? "Share the room code. You can also start on your own." : online + " players ready. Start when everyone is in.";
     else if (!playingNow) status = "Waiting for " + (room.players.find(function (p) { return p.seat === room.hostSeat; }) || { name: "the host" }).name + " to start.";
     say("lobbyStatus", status);
@@ -238,6 +247,7 @@
     document.querySelectorAll(".modePick .modeBtn").forEach(function (b) {
       b.addEventListener("click", function () {
         const where = b.parentElement.dataset.for;
+        if (where === "role") { if (amHost()) net().send({ t: "spectate", on: b.dataset.role === "watch" }); return; }
         if (where === "host") { hostMode = b.dataset.mode; setMode(hostMode, "host"); }
         else if (amHost()) net().send({ t: "mode", mode: b.dataset.mode });
       });
