@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>MAZE</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="app">
+
+  <!-- ================= EDITOR ================= -->
+  <section id="editorScreen">
+    <header id="topbar">
+      <div class="brand"><span class="logo">▚</span><span>MAZE</span></div>
+      <div class="bar">
+        <button data-act="new" title="Empty room">New</button>
+        <button data-act="generate" title="Random maze">Generate</button>
+        <span class="sep"></span>
+        <label class="num">W<input id="inpCols" type="number" min="8" max="64" value="25"></label>
+        <label class="num">H<input id="inpRows" type="number" min="8" max="64" value="19"></label>
+        <button data-act="resize">Apply</button>
+        <span class="sep"></span>
+        <button data-act="undo" title="Ctrl+Z">↶</button>
+        <button data-act="redo" title="Ctrl+Y">↷</button>
+        <button data-act="clear">Clear</button>
+        <span class="sep"></span>
+        <button data-act="save">Save</button>
+        <button data-act="export">Export</button>
+        <button data-act="import">Import</button>
+      </div>
+      <button id="btnTest" class="primary">▶ TEST MAZE</button>
+    </header>
+
+    <div id="editorBody">
+      <aside id="palette">
+        <div class="panelTitle">Tools</div>
+        <div id="toolRow" class="toolRow"></div>
+        <div id="paletteGroups"></div>
+      </aside>
+
+      <div id="canvasWrap">
+        <canvas id="editorCanvas"></canvas>
+        <div id="editorHint">Left-drag paint · Right-drag erase · Alt-click pick · Scroll to change brush</div>
+      </div>
+
+      <aside id="inspector">
+        <div class="panelTitle">Level</div>
+        <label class="field">Name<input id="inpName" type="text" value="Untitled Maze" maxlength="40"></label>
+        <div id="levelStats" class="stats"></div>
+        <div id="validation" class="validation"></div>
+
+        <div class="panelTitle">Selected</div>
+        <div id="selInfo" class="selInfo"></div>
+
+        <div class="panelTitle">Saved mazes</div>
+        <div id="levelList" class="levelList"></div>
+
+        <div class="panelTitle">Legend</div>
+        <ul class="legend">
+          <li><b>Secret wall</b> — looks solid, you walk right through it.</li>
+          <li><b>Door</b> — needs the key. <b>Glass</b> — see through, solid.</li>
+          <li><b>Blobs</b> — hunt you through the maze.</li>
+        </ul>
+      </aside>
+    </div>
+    <input id="fileInput" type="file" accept="application/json,.json" hidden>
+  </section>
+
+  <!-- ================= GAME ================= -->
+  <section id="gameScreen" hidden>
+    <canvas id="view"></canvas>
+    <canvas id="hud"></canvas>
+
+    <div id="clickToPlay" class="overlay">
+      <div class="panel">
+        <h1>READY</h1>
+        <p class="lead">Find the exit. Do not get eaten.</p>
+        <div class="keys">
+          <div><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> move</div>
+          <div><kbd>Mouse</kbd> look · <kbd>Shift</kbd> sprint</div>
+          <div><kbd>L-Click</kbd> attack · <kbd>R-Click</kbd> raise shield</div>
+          <div><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> weapons · <kbd>Wheel</kbd> cycle</div>
+          <div><kbd>E</kbd> open door · <kbd>Tab</kbd> map · <kbd>Esc</kbd> pause</div>
+        </div>
+        <button class="primary big" data-act="lock">CLICK TO PLAY</button>
+        <button data-act="quit">Back to editor</button>
+      </div>
+    </div>
+
+    <div id="pausePanel" class="overlay" hidden>
+      <div class="panel">
+        <h1>PAUSED</h1>
+        <div class="row">
+          <label class="field">Render quality
+            <select id="selQuality">
+              <option value="0.5">Low (fast)</option>
+              <option value="0.7" selected>Medium</option>
+              <option value="1">High</option>
+            </select>
+          </label>
+          <label class="field">Mouse sensitivity
+            <input id="inpSens" type="range" min="0.3" max="3" step="0.1" value="1">
+          </label>
+        </div>
+        <button class="primary big" data-act="lock">RESUME</button>
+        <button data-act="restart">Restart maze</button>
+        <button data-act="quit">Back to editor</button>
+      </div>
+    </div>
+
+    <div id="endPanel" class="overlay" hidden>
+      <div class="panel">
+        <h1 id="endTitle">ESCAPED</h1>
+        <p id="endLead" class="lead"></p>
+        <div id="endStats" class="endStats"></div>
+        <button class="primary big" data-act="restart">TRY AGAIN</button>
+        <button data-act="quit">Back to editor</button>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script src="js/util.js"></script>
+<script src="js/defs.js"></script>
+<script src="js/textures.js"></script>
+<script src="js/sprites.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/level.js"></script>
+<script src="js/editor.js"></script>
+<script src="js/raycaster.js"></script>
+<script src="js/entities.js"></script>
+<script src="js/hud.js"></script>
+<script src="js/game.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
