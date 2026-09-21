@@ -27,15 +27,33 @@
     NONE: 0, START: 1, FINISH: 2,
     SWORD: 3, BOW: 4, SHIELD: 5, ARROWS: 6,
     POTION: 7, KEY: 8, BOOTS: 9, TORCH: 10, TREASURE: 11,
-    BLOB: 12, BLOB_FAST: 13, BLOB_TANK: 14
+    BLOB: 12, BLOB_FAST: 13, BLOB_TANK: 14,
+    START2: 15, START3: 16, START4: 17
   });
+
+  // one colour per seat: tunic, name tag, start marker, minimap dot
+  MAZE.PLAYER_COLORS = ["#ffb454", "#5aa8ff", "#ff6a8a", "#e6e6ee"];
+  MAZE.MAX_PLAYERS = 4;
+  MAZE.START_IDS = [T.START, T.START2, T.START3, T.START4];
+
+  MAZE.MODES = {
+    solo:   { name: "Solo" },
+    coop:   { name: "Co-op", desc: "Work together. Everyone has to get out. Fallen friends can be revived." },
+    versus: { name: "Competitive", desc: "Weapons hurt players too. First one through the exit wins." }
+  };
 
   // cat    : palette grouping
   // scale  : world height of the billboard (1 = floor to ceiling)
   // zbase  : height of the sprite's bottom edge above the floor
   MAZE.THINGS = {
-    [T.START]:   { name: "Start", cat: "marker", sprite: "start", unique: true, mini: "#6ee06e",
-                   desc: "Where you spawn. Every maze needs exactly one." },
+    [T.START]:   { name: "Start P1", cat: "marker", sprite: "start", unique: true, mini: "#ffb454", seat: 0,
+                   desc: "Where player 1 spawns. Every maze needs one." },
+    [T.START2]:  { name: "Start P2", cat: "marker", sprite: "start2", unique: true, mini: "#5aa8ff", seat: 1,
+                   desc: "Player 2's spawn in online games. Leave it out and they start next to player 1." },
+    [T.START3]:  { name: "Start P3", cat: "marker", sprite: "start3", unique: true, mini: "#ff6a8a", seat: 2,
+                   desc: "Player 3's spawn in online games. Leave it out and they start next to player 1." },
+    [T.START4]:  { name: "Start P4", cat: "marker", sprite: "start4", unique: true, mini: "#e6e6ee", seat: 3,
+                   desc: "Player 4's spawn in online games. Leave it out and they start next to player 1." },
     [T.FINISH]:  { name: "Exit Portal", cat: "marker", sprite: "finish", unique: true, mini: "#4fd6c8",
                    scale: 0.95, zbase: 0.02, desc: "Reach it to escape." },
 
@@ -91,6 +109,9 @@
 
   MAZE.PLAYER = {
     radius: 0.22, maxHp: 100, speed: 3.1, sprintMul: 1.75, blockMul: 0.55,
-    maxStamina: 100, staminaDrain: 28, staminaRegen: 20, eyeHeight: 0.5
+    maxStamina: 100, staminaDrain: 28, staminaRegen: 20, eyeHeight: 0.5,
+    scale: 0.74,           // billboard height other players see
+    pvpMul: 0.6,           // weapons hit players softer than blobs, so fights last a few blows
+    respawnVersus: 5, respawnCoop: 14, spawnShield: 2, reviveTime: 1.6, reviveRange: 1.15
   };
 })();

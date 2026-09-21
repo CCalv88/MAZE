@@ -2,6 +2,7 @@
 (function () {
   const MAZE = window.MAZE;
   const A = (MAZE.audio = { ctx: null, master: null, muted: false, ambience: null });
+  let vol = 1;   // per-call loudness, so distant sounds play quieter
 
   A.init = function () {
     if (!A.ctx) {
@@ -34,7 +35,7 @@
     osc.type = o.type || "square";
     osc.frequency.setValueAtTime(o.freq, t0);
     if (o.to) osc.frequency.exponentialRampToValueAtTime(Math.max(1, o.to), t0 + o.dur);
-    const peak = o.gain == null ? 0.2 : o.gain;
+    const peak = Math.max(0.0002, (o.gain == null ? 0.2 : o.gain) * vol);
     g.gain.setValueAtTime(0.0001, t0);
     g.gain.exponentialRampToValueAtTime(peak, t0 + (o.attack || 0.006));
     g.gain.exponentialRampToValueAtTime(0.0001, t0 + o.dur);
@@ -54,7 +55,7 @@
     if (o.to) f.frequency.exponentialRampToValueAtTime(Math.max(20, o.to), t0 + o.dur);
     f.Q.value = o.q == null ? 1.2 : o.q;
     const g = ctx.createGain();
-    const peak = o.gain == null ? 0.2 : o.gain;
+    const peak = Math.max(0.0002, (o.gain == null ? 0.2 : o.gain) * vol);
     g.gain.setValueAtTime(peak, t0);
     g.gain.exponentialRampToValueAtTime(0.0001, t0 + o.dur);
     src.connect(f); f.connect(g); g.connect(A.master);
@@ -95,13 +96,18 @@
     win()       { [523, 659, 784, 1047, 1319].forEach((f, i) =>
                     tone({ freq: f, dur: 0.5, type: "triangle", gain: 0.18, delay: i * 0.13 })); },
     lose()      { [392, 330, 262, 196].forEach((f, i) =>
-                    tone({ freq: f, dur: 0.6, type: "sawtooth", gain: 0.16, delay: i * 0.18 })); }
+                    tone({ freq: f, dur: 0.6, type: "sawtooth", gain: 0.16, delay: i * 0.18 })); },
+    ping()      { tone({ freq: 1320, dur: 0.12, type: "sine", gain: 0.12 });
+                  tone({ freq: 1760, dur: 0.2, type: "sine", gain: 0.1, delay: 0.09 }); }
   };
 
-  A.play = function (name) {
+  A.play = function (name, volume) {
     if (!A.ctx || A.muted) return;
     const fn = SFX[name];
-    if (fn) { try { fn(); } catch (e) { /* audio must never break the game loop */ } }
+    if (!fn) return;
+    vol = volume == null ? 1 : Math.max(0, Math.min(1, volume));
+    try { fn(); } catch (e) { /* audio must never break the game loop */ }
+    vol = 1;
   };
 
   // low dungeon drone, started when a run begins

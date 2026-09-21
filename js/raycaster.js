@@ -77,7 +77,7 @@
 
   Renderer.prototype.render = function (game) {
     const Wd = this.W, Hd = this.H, buf = this.buf, zbuf = this.zbuf;
-    const p = game.player;
+    const p = game.camera();
     const cols = game.cols, rows = game.rows, walls = game.walls;
 
     const dirX = Math.cos(p.ang), dirY = Math.sin(p.ang);
@@ -234,6 +234,11 @@
       if (x1 <= 0 || x0 >= Wd) continue;
       let y0 = Math.ceil(top), y1 = Math.ceil(bottom);
       if (y1 <= 0 || y0 >= Hd) continue;
+      if (e.tag) {
+        // where a name tag goes, as fractions of the view, if a wall is not in the way
+        const cx = U.clamp(screenX | 0, 0, Wd - 1);
+        e._screen = ty < zbuf[cx] ? { x: screenX / Wd, y: top / Hd, dist: ty } : null;
+      }
       const clipY0 = y0 < 0 ? 0 : y0, clipY1 = y1 > Hd ? Hd : y1;
       const baseShade = this.shade(ty);
       const flash = e.flash || 0;

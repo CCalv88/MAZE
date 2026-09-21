@@ -1,203 +1,99 @@
-/* MAZE — blobs, arrows, pickups, particles. */
+/* MAZE — what the client draws: views of the blobs, arrows, pickups and other players the
+   simulation reports, plus purely cosmetic particles. Online, positions arrive about
+   twenty times a second, so each moving view keeps a short buffer and is drawn slightly
+   in the past, smoothly between two known points. */
 (function () {
   const MAZE = window.MAZE;
   const U = MAZE.util;
 
+  // ----------------------------------------------------------- motion ---
+  const INTERP_MS = 110;
+
+  function Motion() { this.q = []; }
+  Motion.prototype.push = function (now, x, y, ang) {
+    const q = this.q, last = q[q.length - 1];
+    // a jump (respawn, correction) should snap, not glide across the map
+    if (last && (now - last.t > 1000 || Math.hypot(x - last.x, y - last.y) > 1.5)) q.length = 0;
+    q.push({ t: now, x: x, y: y, ang: ang || 0 });
+    if (q.length > 10) q.shift();
+  };
+  Motion.prototype.sample = function (now, out) {
+    const q = this.q;
+    if (!q.length) return false;
+    const t = now - INTERP_MS;
+    while (q.length > 2 && q[1].t <= t) q.shift();
+    const a = q[0], b = q[1];
+    if (!b || t <= a.t) { out.x = a.x; out.y = a.y; out.ang = a.ang; return true; }
+    const span = b.t - a.t;
+    const k = span <= 0 ? 1 : Math.min(1.25, (t - a.t) / span);   // a little extrapolation hides a late packet
+    out.x = a.x + (b.x - a.x) * k;
+    out.y = a.y + (b.y - a.y) * k;
+    out.ang = a.ang + U.angDiff(a.ang, b.ang) * Math.min(1, k);
+    return true;
+  };
+
   // ------------------------------------------------------------- blob ---
-  function Blob(game, x, y, thingId) {
-    const def = MAZE.THINGS[thingId];
-    this.game = game;
-    this.kind = thingId;
+  function BlobView(id, kind) {
+    const def = MAZE.THINGS[kind];
+    this.id = id;
+    this.kind = kind;
     this.def = def;
-    this.x = x; this.y = y;
     this.sprite = def.sprite;
+    this.baseScale = def.scale;
     this.scale = def.scale;
     this.zbase = def.zbase;
     this.radius = def.radius;
-    this.hp = def.hp; this.maxHp = def.hp;
-    this.speed = def.speed;
-    this.dmg = def.dmg;
-    this.vx = 0; this.vy = 0;          // knockback velocity
+    this.x = 0; this.y = 0;
+    this.flash = 0;
     this.anim = Math.random() * 6;
     this.frame = 0;
-    this.flash = 0;
-    this.attackCd = 0;
-    this.windup = 0;                   // > 0 while rearing up to bite
-    this.baseScale = def.scale;
-    this.growlCd = 2 + Math.random() * 6;
     this.dead = false;
-    this.alerted = false;
+    this.motion = new Motion();
   }
-
-  Blob.prototype.hurt = function (dmg, dirX, dirY, knock) {
-    if (this.dead) return;
-    this.hp -= dmg;
-    this.flash = 0.75;
-    this.alerted = true;
-    const k = knock || 0.5;
-    this.vx += dirX * k * 6;
-    this.vy += dirY * k * 6;
-    const g = this.game;
-    g.splat(this.x, this.y, this.zbase + this.scale * 0.5, this.def.body, 9);
-    if (this.hp <= 0) {
-      this.dead = true;
-      g.splat(this.x, this.y, this.zbase + this.scale * 0.4, this.def.body2, 26, 3.2);
-      g.stats.kills++;
-      g.stats.score += this.def.score;
-      MAZE.audio.play("dieBlob");
-      g.message("Blob splattered  +" + this.def.score);
-    } else {
-      MAZE.audio.play("hurtBlob");
-    }
-  };
-
-  Blob.prototype.update = function (dt) {
-    const g = this.game, p = g.player;
-    this.anim += dt * (3 + this.speed);
-    this.frame = (this.anim | 0) % 6;
-    if (this.flash > 0) this.flash = Math.max(0, this.flash - dt * 3);
-    if (this.attackCd > 0) this.attackCd -= dt;
-
-    const ddx = p.x - this.x, ddy = p.y - this.y;
-    const d = Math.hypot(ddx, ddy) || 1e-6;
-
-    // knockback decays fast
-    this.vx *= Math.pow(0.02, dt);
-    this.vy *= Math.pow(0.02, dt);
-
-    // occasional growl when it is close enough to be a problem
-    this.growlCd -= dt;
-    if (this.growlCd <= 0) {
-      this.growlCd = 3 + Math.random() * 7;
-      if (d < 9) MAZE.audio.play("growl");
-    }
-
-    if (!this.alerted && d < 3.5) this.alerted = true;   // close enough to hear you
-
-    let tx = 0, ty = 0;
-    const los = d < 14 && g.lineOfSight(this.x, this.y, p.x, p.y);
-    if (los) {
-      this.alerted = true;
-      tx = ddx / d; ty = ddy / d;
-    } else {
-      // follow the flow field downhill toward the player
-      const cx = this.x | 0, cy = this.y | 0;
-      const cur = g.flowAt(cx, cy);
-      let bestV = cur, bx = 0, by = 0;
-      const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
-      for (let i = 0; i < dirs.length; i++) {
-        const nx = cx + dirs[i][0], ny = cy + dirs[i][1];
-        const v = g.flowAt(nx, ny);
-        if (v >= 0 && (bestV < 0 || v < bestV)) { bestV = v; bx = dirs[i][0]; by = dirs[i][1]; }
-      }
-      if (bx || by) {
-        // steer to the centre of the next tile so it does not clip corners
-        const cxc = cx + bx + 0.5, cyc = cy + by + 0.5;
-        const ddx2 = cxc - this.x, ddy2 = cyc - this.y;
-        const dd = Math.hypot(ddx2, ddy2) || 1e-6;
-        tx = ddx2 / dd; ty = ddy2 / dd;
-      } else if (this.alerted) {
-        tx = ddx / d; ty = ddy / d;
-      }
-    }
-
-    // Once in biting range, hold position. Pressing on would carry the blob
-    // into the camera, where it cannot be seen or hit.
-    const minSep = this.radius + MAZE.PLAYER.radius;
-    if (d < minSep + 0.06) { tx = 0; ty = 0; }
-
-    // keep blobs from stacking into a single super-blob
-    let sx = 0, sy = 0;
-    const others = g.enemies;
-    for (let i = 0; i < others.length; i++) {
-      const o = others[i];
-      if (o === this || o.dead) continue;
-      const ox = this.x - o.x, oy = this.y - o.y;
-      const od2 = ox * ox + oy * oy;
-      const want = this.radius + o.radius;
-      if (od2 > 0.0001 && od2 < want * want) {
-        const od = Math.sqrt(od2);
-        sx += (ox / od) * (1 - od / want);
-        sy += (oy / od) * (1 - od / want);
-      }
-    }
-
-    const sp = this.speed * (this.alerted ? 1 : 0.6);
-    const mvx = (tx * sp + sx * 2.2) * dt + this.vx * dt;
-    const mvy = (ty * sp + sy * 2.2) * dt + this.vy * dt;
-    g.moveCircle(this, mvx, mvy, this.radius, true);
-
-    // Attack: rear up first so every bite can be seen and heard coming,
-    // and whiffs if you back off during the wind-up.
-    const reach = minSep + 0.2;
-    if (this.windup > 0) {
-      this.windup -= dt;
-      if (d > reach + 0.15 || p.dead) {
-        this.windup = 0;
-      } else if (this.windup <= 0) {
-        this.windup = 0;
-        this.attackCd = 0.85;
-        g.damagePlayer(this.dmg, ddx / d, ddy / d);
-      }
-    } else if (d < reach && this.attackCd <= 0 && !p.dead) {
-      this.windup = WINDUP;
-      MAZE.audio.play("windup");
-    }
-    const wu = this.windup > 0 ? 1 - this.windup / WINDUP : 0;
+  BlobView.prototype.apply = function (row, now, smooth) {
+    // row: [id, kind, x, y, windup 0..1, flash, hpFrac]
+    if (smooth) this.motion.push(now, row[2], row[3], 0);
+    else { this.x = row[2]; this.y = row[3]; }
+    const wu = row[4];
     this.scale = this.baseScale * (1 + wu * wu * 0.22);
+    this.flash = row[5];
+    this.hpFrac = row[6];
   };
-  const WINDUP = 0.4;
+  BlobView.prototype.update = function (dt, now, smooth) {
+    this.anim += dt * (3 + this.def.speed);
+    this.frame = (this.anim | 0) % 6;
+    if (smooth) this.motion.sample(now, this);
+  };
 
   // ------------------------------------------------------------ arrow ---
-  function Arrow(game, x, y, dx, dy, dmg, speed) {
-    this.game = game;
-    this.x = x; this.y = y;
-    this.dx = dx; this.dy = dy;
-    this.dmg = dmg;
-    this.speed = speed;
-    this.life = 3;
-    this.dead = false;
+  // Arrows fly straight, so instead of drawing them late they are carried forward
+  // from the last report: the one on screen is where the real one is now.
+  function ArrowView(id) {
+    this.id = id;
     this.sprite = "arrow";
     this.frame = 0;
     this.scale = 0.12;
     this.zbase = 0.47;
     this.flash = 0;
+    this.x = 0; this.y = 0;
   }
-
-  Arrow.prototype.update = function (dt) {
-    const g = this.game;
-    this.life -= dt;
-    if (this.life <= 0) { this.dead = true; return; }
-    const steps = 4;
-    const sx = (this.dx * this.speed * dt) / steps;
-    const sy = (this.dy * this.speed * dt) / steps;
-    for (let s = 0; s < steps; s++) {
-      this.x += sx; this.y += sy;
-      if (g.solidAt(this.x, this.y, true)) {
-        this.x -= sx; this.y -= sy;
-        this.dead = true;
-        g.splat(this.x, this.y, this.zbase, 0xff8fb4c8, 6, 1.4);
-        MAZE.audio.play("arrowHit");
-        return;
-      }
-      for (let i = 0; i < g.enemies.length; i++) {
-        const e = g.enemies[i];
-        if (e.dead) continue;
-        if (U.dist2(this.x, this.y, e.x, e.y) < e.radius * e.radius) {
-          e.hurt(this.dmg, this.dx, this.dy, MAZE.WEAPONS.bow.knock);
-          MAZE.audio.play("arrowHit");
-          this.dead = true;
-          return;
-        }
-      }
-    }
+  ArrowView.prototype.apply = function (row, now) {
+    // row: [id, x, y, dx, dy, speed]
+    this.bx = row[1]; this.by = row[2]; this.dx = row[3]; this.dy = row[4]; this.speed = row[5]; this.at = now;
+    this.x = this.bx; this.y = this.by;
+  };
+  ArrowView.prototype.update = function (dt, now, smooth, game) {
+    if (!smooth) return;
+    const t = Math.min(0.25, (now - this.at) / 1000);
+    const nx = this.bx + this.dx * this.speed * t, ny = this.by + this.dy * this.speed * t;
+    if (!game.solidAt(nx, ny, true)) { this.x = nx; this.y = ny; }
   };
 
   // ----------------------------------------------------------- pickup ---
-  function Pickup(game, x, y, thingId) {
-    const def = MAZE.THINGS[thingId];
-    this.game = game;
-    this.kind = thingId;
+  function PickupView(id, kind, x, y) {
+    const def = MAZE.THINGS[kind];
+    this.id = id;
+    this.kind = kind;
     this.def = def;
     this.x = x; this.y = y;
     this.sprite = def.sprite;
@@ -206,15 +102,78 @@
     this.zbase = def.zbase;
     this.frame = 0;
     this.flash = 0;
-    this.dead = false;
     this.t = Math.random() * 6;
   }
-
-  Pickup.prototype.update = function (dt) {
+  PickupView.prototype.update = function (dt) {
     this.t += dt;
     this.zbase = this.baseZ + Math.sin(this.t * 2) * 0.035;
     const sp = MAZE.sprites.get(this.sprite);
     if (sp && sp.count > 1) this.frame = ((this.t * 9) | 0) % sp.count;
+  };
+
+  // ----------------------------------------------------------- player ---
+  // Another player, seen from the outside. The sprite is picked each frame from the
+  // angle between where they face and where the camera is.
+  function PlayerView(seat, name) {
+    this.seat = seat;
+    this.name = name || "Player " + (seat + 1);
+    this.color = MAZE.PLAYER_COLORS[seat] || "#ffffff";
+    this.x = 0; this.y = 0; this.ang = 0; this.pitch = 0;
+    this.hp = MAZE.PLAYER.maxHp;
+    this.dead = false; this.escaped = false; this.away = false;
+    this.blocking = false; this.moving = false; this.shielded = false;
+    this.weapon = "fist";
+    this.swingT = 0;
+    this.flash = 0;
+    this.walk = 0;
+    this.revive = 0;
+    this.respawn = 0;
+    this.sprite = "hero0_front_fist";
+    this.frame = 0;
+    this.scale = MAZE.PLAYER.scale;
+    this.zbase = 0;
+    this.tag = true;
+    this.motion = new Motion();
+    this._lx = 0; this._ly = 0;
+  }
+  PlayerView.prototype.apply = function (row, now, smooth) {
+    // row: [seat, x, y, ang, pitch, hp, flags, weaponIdx, epoch, revive, respawn]
+    if (smooth) this.motion.push(now, row[1], row[2], row[3]);
+    else { this.x = row[1]; this.y = row[2]; this.ang = row[3]; }
+    this.pitch = row[4];
+    if (row[5] < this.hp && !(row[6] & 1)) this.flash = 0.8;
+    this.hp = row[5];
+    const f = row[6];
+    this.dead = !!(f & 1); this.escaped = !!(f & 2); this.blocking = !!(f & 4);
+    this.away = !!(f & 8); this.moving = !!(f & 16); this.shielded = !!(f & 32);
+    this.weapon = MAZE.Sim.WEAPON_BY_IDX[row[7]] || "fist";
+    this.revive = row[9] || 0;
+    this.respawn = row[10] || 0;
+  };
+  PlayerView.prototype.update = function (dt, now, smooth) {
+    if (smooth) this.motion.sample(now, this);
+    const moved = Math.hypot(this.x - this._lx, this.y - this._ly);
+    this._lx = this.x; this._ly = this.y;
+    if (moved > 0.001 && moved < 1) this.walk += moved * 2.4;
+    if (this.swingT > 0) this.swingT = Math.max(0, this.swingT - dt);
+    if (this.flash > 0) this.flash = Math.max(0, this.flash - dt * 3);
+  };
+  PlayerView.prototype.visible = function () { return !this.escaped && !this.away; };
+  // choose the directional frame for a viewer standing at (cx, cy)
+  PlayerView.prototype.face = function (cx, cy) {
+    if (this.dead) {
+      this.sprite = "hero" + this.seat + "_down";
+      this.frame = 0;
+      this.scale = 0.26;
+      return;
+    }
+    const toViewer = Math.atan2(cy - this.y, cx - this.x);
+    const rel = U.angDiff(this.ang, toViewer);
+    const a = Math.abs(rel);
+    const dir = a < Math.PI * 0.25 ? "front" : a > Math.PI * 0.75 ? "back" : rel > 0 ? "right" : "left";
+    this.sprite = "hero" + this.seat + "_" + dir + "_" + this.weapon;
+    this.scale = MAZE.PLAYER.scale;
+    this.frame = this.swingT > 0 ? 3 : this.moving ? 1 + ((this.walk | 0) & 1) : 0;
   };
 
   // -------------------------------------------------------- particles ---
@@ -236,8 +195,10 @@
     if (this.z < 0.02) { this.z = 0.02; this.vz *= -0.35; this.vx *= 0.7; this.vy *= 0.7; }
   };
 
-  MAZE.Blob = Blob;
-  MAZE.Arrow = Arrow;
-  MAZE.Pickup = Pickup;
+  MAZE.Motion = Motion;
+  MAZE.BlobView = BlobView;
+  MAZE.ArrowView = ArrowView;
+  MAZE.PickupView = PickupView;
+  MAZE.PlayerView = PlayerView;
   MAZE.Particle = Particle;
 })();

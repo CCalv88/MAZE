@@ -31,6 +31,7 @@
   // ---------------------------------------------------------- viewmodel --
   Hud.prototype.drawWeapon = function (g, game) {
     const p = game.player;
+    if (p.dead || p.escaped) return;
     const w = this.w, h = this.h;
     const scale = Math.min(w, h * 1.6) / 700;
     const sway = p.swayX * 26, swayY = p.swayY * 20 + p.bobView * 26;
@@ -143,26 +144,167 @@
       g.fillRect(x0 + it.x * cell - cell * .2, y0 + it.y * cell - cell * .2, cell * .5, cell * .5);
     }
     // blobs only show when close — no free radar
+    const cam = game.camera();
+    const sense = game.player.has.torch ? 11 : 7;
     for (const e of game.enemies) {
       if (e.dead) continue;
-      if (U.dist(e.x, e.y, game.player.x, game.player.y) > (game.player.has.torch ? 11 : 7)) continue;
+      if (U.dist(e.x, e.y, cam.x, cam.y) > sense) continue;
       g.fillStyle = e.def.mini;
       g.beginPath();
       g.arc(x0 + e.x * cell, y0 + e.y * cell, Math.max(1.6, cell * .34), 0, U.TAU);
       g.fill();
     }
 
-    // player arrow
-    const px = x0 + game.player.x * cell, py = y0 + game.player.y * cell;
+    // teammates always show; rivals only when they are close, like blobs
+    for (const o of game.others) {
+      if (!o.visible()) continue;
+      if (game.mode === "versus" && U.dist(o.x, o.y, cam.x, cam.y) > sense) continue;
+      arrow(g, x0 + o.x * cell, y0 + o.y * cell, o.ang, Math.max(3, cell * .55), o.dead ? "#6a7080" : o.color);
+    }
+
+    // pings pulse where someone pointed
+    for (const pg of game.pings) {
+      const r = Math.max(4, cell * 1.2) * (1 + (1 - (pg.t % 1)) * .6);
+      g.strokeStyle = game.colorOf(pg.seat);
+      g.globalAlpha = Math.min(1, pg.t);
+      g.lineWidth = 2;
+      g.beginPath(); g.arc(x0 + pg.x * cell, y0 + pg.y * cell, r, 0, U.TAU); g.stroke();
+      g.globalAlpha = big ? 0.97 : 0.8;
+    }
+
+    if (!game.player.escaped)
+      arrow(g, x0 + game.player.x * cell, y0 + game.player.y * cell, game.player.ang, Math.max(3, cell * .6), MAZE.PLAYER_COLORS[game.seat] || "#ffb454");
+    g.restore();
+    return { x: x0 - 6, y: y0 - 6, w: mw + 12, h: mh + 12 };
+  };
+
+  function arrow(g, px, py, ang, r, col) {
     g.save();
     g.translate(px, py);
-    g.rotate(game.player.ang);
-    g.fillStyle = "#ffb454";
-    const r = Math.max(3, cell * .6);
+    g.rotate(ang);
+    g.fillStyle = col;
     g.beginPath(); g.moveTo(r, 0); g.lineTo(-r * .7, r * .7); g.lineTo(-r * .3, 0); g.lineTo(-r * .7, -r * .7);
     g.closePath(); g.fill();
+    g.strokeStyle = "rgba(0,0,0,.6)"; g.lineWidth = 1; g.stroke();
     g.restore();
-    g.restore();
+  }
+
+  // --------------------------------------------------------- multiplayer --
+  // names over other players' heads, placed where the renderer drew them
+  Hud.prototype.drawTags = function (g, game) {
+    const w = this.w, h = this.h;
+    g.textAlign = "center";
+    for (const o of game.others) {
+      const s = o._screen;
+      if (!s || s.dist > 12) continue;
+      const x = s.x * w, y = Math.max(16, s.y * h - 8);
+      const a = U.clamp(1.4 - s.dist / 10, 0.35, 1);
+      g.globalAlpha = a;
+      g.font = "700 12px Segoe UI,system-ui,sans-serif";
+      const label = o.dead ? o.name + (game.mode === "coop" ? " — DOWN" : "") : o.name;
+      const tw = g.measureText(label).width + 12;
+      g.fillStyle = "rgba(0,0,0,.55)";
+      g.fillRect(x - tw / 2, y - 24, tw, 17);
+      g.fillStyle = o.color;
+      g.fillText(label, x, y - 11);
+      if (!o.dead) bar(g, x - 24, y - 5, 48, 6, o.hp / MAZE.PLAYER.maxHp, o.hp > 55 ? "#6ee06e" : o.hp > 28 ? "#ffb454" : "#ff5a5a");
+      else if (o.revive > 0) bar(g, x - 24, y - 5, 48, 6, o.revive, "#6ee06e");
+    }
+    g.globalAlpha = 1;
+    g.textAlign = "left";
+  };
+
+  // pings seen through the walls: a marker at the right bearing, with the distance
+  Hud.prototype.drawPings = function (g, game) {
+    const cam = game.camera(), w = this.w, h = this.h;
+    for (const pg of game.pings) {
+      const rel = U.angDiff(cam.ang, Math.atan2(pg.y - cam.y, pg.x - cam.x));
+      if (Math.abs(rel) > 1.1) continue;
+      const x = w / 2 + (Math.tan(rel) / 0.68) * (w / 2);
+      const y = h * 0.42;
+      const d = U.dist(cam.x, cam.y, pg.x, pg.y);
+      g.globalAlpha = Math.min(1, pg.t);
+      g.fillStyle = game.colorOf(pg.seat);
+      g.strokeStyle = "rgba(0,0,0,.7)";
+      g.lineWidth = 2;
+      g.beginPath(); g.moveTo(x, y - 12); g.lineTo(x + 9, y); g.lineTo(x, y + 12); g.lineTo(x - 9, y); g.closePath();
+      g.fill(); g.stroke();
+      g.textAlign = "center";
+      g.font = "700 11px Segoe UI,system-ui,sans-serif";
+      g.fillText(Math.round(d) + "m", x, y + 27);
+      g.textAlign = "left";
+    }
+    g.globalAlpha = 1;
+  };
+
+  // everyone in the room: colour, name, health, and what they are up to
+  Hud.prototype.drawRoster = function (g, game, top) {
+    const list = [{ seat: game.seat, name: game.playerName || "You", hp: game.player.hp, dead: game.player.dead, escaped: game.player.escaped, me: true }];
+    for (const o of game.others) list.push({ seat: o.seat, name: o.name, hp: o.hp, dead: o.dead, escaped: o.escaped, away: o.away, respawn: o.respawn });
+    list.sort((a, b) => a.seat - b.seat);
+    const x = this.w - 196, rowH = 22;
+    let y = top + 10;
+    g.fillStyle = "rgba(7,10,15,.72)";
+    g.fillRect(x - 8, y - 6, 188, list.length * rowH + 8);
+    for (const r of list) {
+      const col = MAZE.PLAYER_COLORS[r.seat];
+      g.fillStyle = col;
+      g.fillRect(x, y + 3, 10, 10);
+      g.font = (r.me ? "800 " : "600 ") + "12px Segoe UI,system-ui,sans-serif";
+      g.fillStyle = r.away ? "#6a7080" : "#dfe5f0";
+      const nm = r.name.length > 11 ? r.name.slice(0, 10) + "…" : r.name;
+      g.fillText(nm, x + 16, y + 12);
+      let status = "";
+      if (r.away) status = "OFFLINE";
+      else if (r.escaped) status = "ESCAPED";
+      else if (r.dead) status = game.mode === "coop" ? "DOWN" : "DEAD";
+      if (status) {
+        g.textAlign = "right";
+        g.font = "800 10px Segoe UI,system-ui,sans-serif";
+        g.fillStyle = r.escaped ? "#4fd6c8" : r.away ? "#6a7080" : "#ff5a5a";
+        g.fillText(status, x + 172, y + 12);
+        g.textAlign = "left";
+      } else {
+        bar(g, x + 104, y + 3, 68, 10, r.hp / MAZE.PLAYER.maxHp, r.hp > 55 ? "#6ee06e" : r.hp > 28 ? "#ffb454" : "#ff5a5a");
+      }
+      y += rowH;
+    }
+  };
+
+  // big centred line for countdowns, being down, and spectating
+  Hud.prototype.drawBanner = function (g, game) {
+    const p = game.player, w = this.w, h = this.h;
+    let title = "", sub = "", col = "#ffb454";
+    if (game.freeze > 0) {
+      title = String(Math.ceil(game.freeze));
+      sub = "The blobs are waking up…";
+    } else if (p.dead && game.mode !== "solo") {
+      title = game.mode === "coop" ? "YOU ARE DOWN" : "YOU DIED";
+      col = "#ff5a5a";
+      sub = p.respawn > 0 ? "Back at your start in " + Math.ceil(p.respawn) + "…" : "";
+      if (game.mode === "coop") sub = "A teammate can revive you (hold E beside you). " + sub;
+    } else if (p.escaped && game.mode === "coop") {
+      title = "ESCAPED";
+      col = "#4fd6c8";
+      const o = game.otherMap.get(game.spectate);
+      sub = o && o.visible() ? "Watching " + o.name + " — click to switch" : "Waiting for the rest of your team…";
+    }
+    if (!title) return;
+    g.textAlign = "center";
+    g.font = "800 44px Segoe UI,system-ui,sans-serif";
+    g.lineWidth = 5;
+    g.strokeStyle = "rgba(0,0,0,.7)";
+    g.strokeText(title, w / 2, h * 0.3);
+    g.fillStyle = col;
+    g.fillText(title, w / 2, h * 0.3);
+    if (sub) {
+      g.font = "700 15px Segoe UI,system-ui,sans-serif";
+      g.fillStyle = "#dfe5f0";
+      g.strokeStyle = "rgba(0,0,0,.7)"; g.lineWidth = 3;
+      g.strokeText(sub, w / 2, h * 0.3 + 30);
+      g.fillText(sub, w / 2, h * 0.3 + 30);
+    }
+    g.textAlign = "left";
   };
 
   // --------------------------------------------------------------- draw --
@@ -173,6 +315,7 @@
     g.clearRect(0, 0, w, h);
     const p = game.player;
 
+    this.drawTags(g, game);
     this.drawWeapon(g, game);
 
     // --- damage / low health vignette ---
@@ -221,7 +364,7 @@
     g.globalAlpha = 1;
 
     // --- crosshair ---
-    if (!p.dead) {
+    if (!p.dead && !p.escaped) {
       g.strokeStyle = p.swingT > 0 ? "rgba(255,180,84,.95)" : "rgba(255,255,255,.55)";
       g.lineWidth = 2;
       const c = 4 + (p.swingT > 0 ? 5 : 0);
@@ -291,6 +434,11 @@
     if (game.totalTreasure) {
       g.fillText("TREASURE " + game.stats.treasure + "/" + game.totalTreasure, w / 2, 58);
     }
+    if (game.mode === "versus" || game.mode === "coop") {
+      g.fillStyle = game.mode === "versus" ? "#ff6a8a" : "#6ee06e";
+      g.font = "800 10px Segoe UI,system-ui,sans-serif";
+      g.fillText(game.mode === "versus" ? "COMPETITIVE · FIRST OUT WINS" : "CO-OP · EVERYONE OUT", w / 2, game.totalTreasure ? 74 : 58);
+    }
     g.textAlign = "left";
 
     // --- messages ---
@@ -318,7 +466,10 @@
       g.textAlign = "left";
     }
 
-    this.drawMap(g, game, game.bigMap);
+    this.drawPings(g, game);
+    this.drawBanner(g, game);
+    const box = this.drawMap(g, game, game.bigMap);
+    if (game.others.length && !game.bigMap) this.drawRoster(g, game, box.y + box.h);
   };
 
   MAZE.Hud = Hud;

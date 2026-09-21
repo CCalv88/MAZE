@@ -78,6 +78,35 @@
     return null;
   };
 
+  // the four start markers, by seat; null where the builder left one out
+  L.findStarts = function (lv) {
+    return MAZE.START_IDS.map(function (id) {
+      const c = L.findThing(lv, id);
+      return c && lv.walls[c.y * lv.cols + c.x] === W.EMPTY ? c : null;
+    });
+  };
+
+  // One spawn cell per seat. Seats without their own marker get the nearest open
+  // cells around player 1's start, so nobody spawns inside anybody else.
+  L.spawnPoints = function (lv) {
+    const starts = L.findStarts(lv);
+    const p1 = starts[0] || { x: 1, y: 1 };
+    const out = starts.slice();
+    out[0] = p1;
+    const taken = new Set(out.filter(Boolean).map((c) => c.y * lv.cols + c.x));
+    const dist = L.bfs(lv, p1.x, p1.y, { secret: false, door: false });
+    const order = [];
+    for (let i = 0; i < dist.length; i++) if (dist[i] > 0 && !taken.has(i)) order.push(i);
+    order.sort((a, b) => dist[a] - dist[b] || a - b);
+    let k = 0;
+    for (let s = 1; s < out.length; s++) {
+      if (out[s]) continue;
+      const i = order[k++];
+      out[s] = i == null ? { x: p1.x, y: p1.y } : { x: i % lv.cols, y: (i / lv.cols) | 0 };
+    }
+    return out;
+  };
+
   // ---------------------------------------------------------------- BFS --
   // opts.secret / opts.door decide whether those tiles count as passable.
   L.bfs = function (lv, sx, sy, opts) {
@@ -254,6 +283,41 @@
       }
     }
 
+    // --- starts for players 2-4: on player 1's side of the door, about as far from
+    //     the exit as player 1, and spread apart so a race starts fair ---
+    if (opts.players !== false) {
+      const fromExit = L.bfs(lv, bx, by, { secret: false, door: true });
+      const reachP1 = L.bfs(lv, 1, 1, { secret: false, door: false });
+      const target = fromExit[I(1, 1)];
+      const chosen = [[1, 1]];
+      const cand = openCells.filter((c) => {
+        const i = I(c[0], c[1]);
+        // tighter than the validator's "uneven" warning, so a generated race never trips it
+        return !lv.things[i] && reachP1[i] > 6 && fromExit[i] > 0 && Math.abs(fromExit[i] - target) <= Math.max(2, Math.floor(target * 0.1));
+      });
+      for (let s = 1; s < 4 && cand.length; s++) {
+        let bestC = null, bestD = -1;
+        for (const c of cand) {
+          let m = 1e9;
+          for (const o of chosen) m = Math.min(m, Math.abs(c[0] - o[0]) + Math.abs(c[1] - o[1]));
+          if (m > bestD) { bestD = m; bestC = c; }
+        }
+        if (!bestC || bestD < 3) break;
+        chosen.push(bestC);
+        L.setThing(lv, bestC[0], bestC[1], MAZE.START_IDS[s]);
+        cand.splice(cand.indexOf(bestC), 1);
+      }
+    }
+    const nearStart = (function () {
+      const best = new Int32Array(cols * rows).fill(1 << 29);
+      for (const s of L.findStarts(lv)) {
+        if (!s) continue;
+        const d = L.bfs(lv, s.x, s.y);
+        for (let i = 0; i < d.length; i++) if (d[i] >= 0 && d[i] < best[i]) best[i] = d[i];
+      }
+      return best;
+    })();
+
     // --- items ---
     const free = rnd.shuffle(openCells.filter((c) => !lv.things[I(c[0], c[1])] && dist[I(c[0], c[1])] > 3));
     let fi = 0;
@@ -268,8 +332,8 @@
     for (let i = 0; i < 1 + Math.round(area * 0.35); i++) put(T.POTION);
     for (let i = 0; i < 3 + Math.round(area * 0.7); i++) put(T.TREASURE);
 
-    // --- enemies, kept well away from the spawn point ---
-    const spawnSafe = free.filter((c) => dist[I(c[0], c[1])] > 8 && !lv.things[I(c[0], c[1])]);
+    // --- enemies, kept well away from every spawn point ---
+    const spawnSafe = free.filter((c) => nearStart[I(c[0], c[1])] > 8 && !lv.things[I(c[0], c[1])]);
     const enemyCount = opts.enemies == null ? Math.round((2 + area * 0.9) * diff) : opts.enemies;
     for (let i = 0; i < Math.min(enemyCount, spawnSafe.length); i++) {
       const c = spawnSafe[i], roll = rnd();
@@ -282,10 +346,10 @@
 
   // --------------------------------------------------------- validation --
   L.validate = function (lv) {
-    const errors = [], warnings = [];
+    const errors = [], warnings = [], info = [];
     const start = L.findThing(lv, T.START);
     const finish = L.findThing(lv, T.FINISH);
-    if (!start) errors.push("No start point — place one.");
+    if (!start) errors.push("No player 1 start — place one.");
     if (!finish) errors.push("No exit portal — place one.");
 
     const counts = { enemies: 0, items: 0, secrets: 0, treasure: 0, open: 0, doors: 0, keys: 0, bow: 0, arrows: 0 };
@@ -315,30 +379,103 @@
       for (let i = 0; i < lv.things.length; i++)
         if (lv.things[i] && lv.walls[i] !== W.EMPTY) buried++;
       if (buried) warnings.push(buried + " object(s) sit inside walls and will be ignored.");
+
+      // extra player starts: each has to be able to get out, and a race should be fair
+      // fairness is judged on the route everyone can see; secrets are a bonus for whoever finds them
+      const starts = L.findStarts(lv);
+      const fromExit = L.bfs(lv, finish.x, finish.y, { secret: true, door: true });
+      const honest = L.bfs(lv, finish.x, finish.y, { secret: false, door: true });
+      const steps = [];
+      counts.starts = 0;
+      starts.forEach(function (s, seat) {
+        if (!s) return;
+        counts.starts++;
+        const i = s.y * lv.cols + s.x;
+        if (fromExit[i] < 0) errors.push("Player " + (seat + 1) + " cannot reach the exit from their start.");
+        else steps.push({ seat: seat, d: honest[i] >= 0 ? honest[i] : fromExit[i] });
+      });
+      if (counts.starts > 1 && steps.length > 1) {
+        info.push("Steps to the exit: " + steps.map((s) => "P" + (s.seat + 1) + " " + s.d).join(", "));
+        const lo = Math.min.apply(null, steps.map((s) => s.d)), hi = Math.max.apply(null, steps.map((s) => s.d));
+        if (hi - lo > Math.max(4, lo * 0.25)) warnings.push("Starts are uneven for a race: " + lo + " vs " + hi + " steps to the exit.");
+      } else {
+        info.push("Online, players 2-4 start beside player 1 unless you place their starts.");
+      }
     }
     if (counts.bow && !counts.arrows) warnings.push("A bow with no arrows is just a stick.");
     if (counts.arrows && !counts.bow) warnings.push("There are arrows but no bow.");
     if (!counts.enemies) warnings.push("No enemies — this will be a quiet stroll.");
 
-    return { errors, warnings, counts, ok: errors.length === 0 };
+    return { errors, warnings, info, counts, ok: errors.length === 0 };
   };
+
+  // --------------------------------------------------------- maze codes --
+  // A maze's code is a hash of its layout (size, walls, things; not its name), so
+  // the same maze always has the same code and any edit gives it a new one.
+  const CODE_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";   // Crockford base32: no I, L, O, U
+  L.CODE_LENGTH = 6;
+  L.canonical = function (lv) {
+    let s = lv.cols + "x" + lv.rows + ":";
+    for (let i = 0; i < lv.walls.length; i++) s += String.fromCharCode(48 + lv.walls[i]);
+    s += ":";
+    for (let i = 0; i < lv.things.length; i++) s += String.fromCharCode(48 + lv.things[i]);
+    return s;
+  };
+  // cyrb53: a fast 53-bit string hash with good avalanche, fine for content addressing
+  L.hash53 = function (str, seed) {
+    let h1 = 0xdeadbeef ^ (seed || 0), h2 = 0x41c6ce57 ^ (seed || 0);
+    for (let i = 0; i < str.length; i++) {
+      const ch = str.charCodeAt(i);
+      h1 = Math.imul(h1 ^ ch, 2654435761);
+      h2 = Math.imul(h2 ^ ch, 1597334677);
+    }
+    h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+    h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+    return 4294967296 * (2097151 & h2) + (h1 >>> 0);
+  };
+  // salt only changes if two different mazes ever collide on the server
+  L.code = function (lv, salt) {
+    let h = L.hash53(L.canonical(lv) + (salt ? "#" + salt : ""));
+    let out = "";
+    for (let i = 0; i < L.CODE_LENGTH; i++) { out += CODE_ALPHABET[h % 32]; h = Math.floor(h / 32); }
+    return out;
+  };
+  L.normCode = (s) => String(s || "").toUpperCase().replace(/[^0-9A-Z]/g, "")
+    .replace(/O/g, "0").replace(/[IL]/g, "1").replace(/U/g, "V");
+  L.isMazeCode = (s) => new RegExp("^[" + CODE_ALPHABET + "]{" + L.CODE_LENGTH + "}$").test(s);
 
   // ------------------------------------------------------------ storage --
   L.toJSON = function (lv) {
     return JSON.stringify({
-      format: "maze.level", version: 1, name: lv.name, cols: lv.cols, rows: lv.rows,
+      format: "maze.level", version: 2, name: lv.name, cols: lv.cols, rows: lv.rows,
       walls: Array.from(lv.walls), things: Array.from(lv.things)
     });
   };
 
+  // Anything unknown becomes floor / nothing, so a hand-edited or hostile file can
+  // never put an id the engine does not understand into the grid.
   L.fromJSON = function (text) {
     const o = typeof text === "string" ? JSON.parse(text) : text;
     if (!o || !o.cols || !o.rows || !o.walls || !o.things) throw new Error("Not a MAZE level file.");
-    const lv = L.create(o.cols, o.rows, o.name || "Imported Maze");
+    const name = String(o.name || "Imported Maze").replace(/[\u0000-\u001f<>]/g, "").trim().slice(0, 40) || "Imported Maze";
+    const lv = L.create(+o.cols, +o.rows, name);
+    if (lv.cols !== +o.cols || lv.rows !== +o.rows) throw new Error("Maze size out of range.");
     const n = lv.cols * lv.rows;
+    const seen = {};
     for (let i = 0; i < n; i++) {
-      lv.walls[i] = o.walls[i] || 0;
-      lv.things[i] = o.things[i] || 0;
+      const w = +o.walls[i] || 0, t = +o.things[i] || 0;
+      lv.walls[i] = w === W.EMPTY || MAZE.WALLS[w] ? w : W.EMPTY;
+      let id = MAZE.THINGS[t] ? t : 0;
+      if (id && MAZE.THINGS[id].unique) { if (seen[id]) id = 0; seen[id] = 1; }
+      lv.things[i] = id;
+    }
+    L.border(lv, W.BRICK);
+    // keep whatever border style the file used, as long as it is a solid wall
+    for (let i = 0; i < n; i++) {
+      const x = i % lv.cols, y = (i / lv.cols) | 0;
+      if (x && y && x < lv.cols - 1 && y < lv.rows - 1) continue;
+      const w = +o.walls[i];
+      if (MAZE.WALLS[w] && MAZE.WALLS[w].solid && w !== W.DOOR) lv.walls[i] = w;
     }
     return lv;
   };

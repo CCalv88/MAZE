@@ -1,0 +1,25 @@
+[Unit]
+Description=MAZE multiplayer maze game server
+After=network.target
+
+[Service]
+Type=simple
+User=maze
+Group=maze
+Environment=NODE_ENV=production
+Environment=HOST=127.0.0.1
+Environment=PORT=3700
+Environment=DATA_DIR=/var/lib/maze
+WorkingDirectory=/opt/maze
+ExecStart=/usr/bin/node /opt/maze/server.js
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/maze
+MemoryMax=300M
+
+[Install]
+WantedBy=multi-user.target

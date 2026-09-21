@@ -57,6 +57,8 @@
           const d = MAZE.THINGS[k];
           if (d.cat === cat.id) entries.push({ layer: "thing", id: +k, name: d.name, def: d });
         }
+        // player starts 1-4 first, then the exit
+        entries.sort((a, b) => (a.def.seat == null ? 9 : a.def.seat) - (b.def.seat == null ? 9 : b.def.seat));
       }
       if (!entries.length) return;
       const g = document.createElement("div");
@@ -304,9 +306,11 @@
         const def = MAZE.THINGS[id];
         if (!def) continue;
         const px = x * cell, py = y * cell;
-        if (id === T.START || id === T.FINISH) {
-          g.fillStyle = id === T.START ? "rgba(110,224,110,.22)" : "rgba(79,214,200,.24)";
+        if (def.cat === "marker") {
+          g.fillStyle = def.mini;
+          g.globalAlpha = 0.24;
           g.fillRect(px, py, cell, cell);
+          g.globalAlpha = 1;
           g.strokeStyle = def.mini;
           g.lineWidth = Math.max(1.5, cell * .1);
           g.strokeRect(px + 1, py + 1, cell - 2, cell - 2);
@@ -364,8 +368,21 @@
       const d = document.createElement("div");
       d.className = "warn"; d.textContent = "- " + e; box.appendChild(d);
     });
+    v.info.forEach(function (e) {
+      const d = document.createElement("div");
+      d.className = "info"; d.textContent = e; box.appendChild(d);
+    });
     this.valid = v;
     document.getElementById("btnTest").disabled = !v.ok;
+    document.getElementById("btnOnline").disabled = !v.ok;
+
+    // the maze code is a hash of the layout, so it changes with every edit
+    const code = L.code(lv);
+    if (code !== this._code) {
+      this._code = code;
+      document.getElementById("mazeCode").textContent = code;
+      if (this.onCodeChange) this.onCodeChange(code);
+    }
   };
 
   Editor.prototype.syncInputs = function () {

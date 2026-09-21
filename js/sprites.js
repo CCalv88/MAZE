@@ -76,11 +76,19 @@
     const T = MAZE.T, TH = MAZE.THINGS;
 
     // ---- markers --------------------------------------------------------
-    one("start", 48, 48, (g) => {
-      g.fillStyle = "#6ee06e";
-      g.beginPath(); g.moveTo(24, 8); g.lineTo(38, 30); g.lineTo(28, 30); g.lineTo(28, 42);
-      g.lineTo(20, 42); g.lineTo(20, 30); g.lineTo(10, 30); g.closePath(); g.fill();
-      outline(g, 2, "#2f6b2f");
+    ["start", "start2", "start3", "start4"].forEach((name, seat) => {
+      one(name, 48, 48, (g) => {
+        g.fillStyle = MAZE.PLAYER_COLORS[seat];
+        g.beginPath(); g.moveTo(24, 4); g.lineTo(40, 26); g.lineTo(29, 26); g.lineTo(29, 36);
+        g.lineTo(19, 36); g.lineTo(19, 26); g.lineTo(8, 26); g.closePath(); g.fill();
+        outline(g, 2, "rgba(0,0,0,.55)");
+        g.fillStyle = "#0b0e14";
+        g.beginPath(); g.arc(24, 38, 9, 0, U.TAU); g.fill();
+        g.fillStyle = MAZE.PLAYER_COLORS[seat];
+        g.font = "800 13px Segoe UI,system-ui,sans-serif";
+        g.textAlign = "center"; g.textBaseline = "middle";
+        g.fillText(String(seat + 1), 24, 39);
+      });
     });
 
     frames("finish", 48, 64, 6, (g, w, h, i, n) => {
@@ -244,5 +252,143 @@
       g.fillStyle = "#e6ebf5"; g.beginPath(); g.moveTo(31, 6); g.lineTo(22, 1.5); g.lineTo(22, 10.5); g.fill();
       g.fillStyle = "#e05a5a"; g.beginPath(); g.moveTo(2, 6); g.lineTo(8, 1); g.lineTo(9, 6); g.lineTo(8, 11); g.fill();
     });
+
+    // ---- other players --------------------------------------------------
+    // hero<seat>_<front|back|left|right>_<fist|sword|bow>: frames stand, step, step, attack
+    MAZE.PLAYER_COLORS.forEach((color, seat) => {
+      for (const dir of ["front", "back", "left", "right"])
+        for (const weapon of ["fist", "sword", "bow"])
+          frames("hero" + seat + "_" + dir + "_" + weapon, 40, 64, 4, (g, w, h, i) => drawHero(g, color, dir, weapon, i));
+      one("hero" + seat + "_down", 64, 24, (g) => drawDowned(g, color));
+    });
   };
+
+  // ------------------------------------------------------------ heroes --
+  function tint(hex, k) {
+    const n = parseInt(hex.slice(1), 16);
+    const f = (v) => Math.max(0, Math.min(255, Math.round(k < 0 ? v * (1 + k) : v + (255 - v) * k)));
+    return "rgb(" + f(n >> 16) + "," + f((n >> 8) & 255) + "," + f(n & 255) + ")";
+  }
+
+  function drawSword(g, x, y, ang, len) {
+    g.save(); g.translate(x, y); g.rotate(ang);
+    g.fillStyle = "#6e4a22"; g.fillRect(-1.5, -1, 3, 5);                 // grip
+    g.fillStyle = "#c99b4a"; g.fillRect(-4, -2.5, 8, 2);                 // guard
+    const grd = g.createLinearGradient(-2, 0, 2, 0);
+    grd.addColorStop(0, "#f2f6ff"); grd.addColorStop(1, "#8a93a7");
+    g.fillStyle = grd;
+    g.beginPath(); g.moveTo(-1.8, -2.5); g.lineTo(1.8, -2.5); g.lineTo(1.2, -len); g.lineTo(0, -len - 3); g.lineTo(-1.2, -len); g.closePath(); g.fill();
+    g.restore();
+  }
+  function drawBow(g, x, y, ang, drawn) {
+    g.save(); g.translate(x, y); g.rotate(ang);
+    g.strokeStyle = "#8a5c2c"; g.lineWidth = 2.4; g.lineCap = "round";
+    g.beginPath(); g.arc(0, 0, 11, -1.15, 1.15); g.stroke();
+    g.strokeStyle = "#e6ebf5"; g.lineWidth = 0.8;
+    const pull = drawn ? -6 : 0;
+    g.beginPath(); g.moveTo(Math.cos(-1.15) * 11, Math.sin(-1.15) * 11); g.lineTo(pull, 0); g.lineTo(Math.cos(1.15) * 11, Math.sin(1.15) * 11); g.stroke();
+    if (drawn) { g.strokeStyle = "#b9884f"; g.lineWidth = 1.4; g.beginPath(); g.moveTo(pull, 0); g.lineTo(14, 0); g.stroke(); }
+    g.restore();
+  }
+
+  // A small hooded adventurer in the seat's colour. i: 0 stand, 1/2 walking, 3 attacking.
+  function drawHero(g, color, dir, weapon, i) {
+    const dark = tint(color, -0.45), light = tint(color, 0.3);
+    const skin = "#e0b08a", boot = "#3a2612", cx = 20;
+    const side = dir === "left" || dir === "right";
+    const flip = dir === "left" ? -1 : 1;
+    const step = i === 1 ? 1 : i === 2 ? -1 : 0;
+    const attack = i === 3;
+    const bobY = step ? -1 : 0;
+
+    ellipse(g, cx, 61, 11, 2.6, "rgba(0,0,0,.35)");
+
+    // legs
+    g.fillStyle = dark;
+    if (side) {
+      const a = step * 4;
+      g.save(); g.translate(cx, 45 + bobY);
+      for (const s of [a, -a]) {
+        g.save(); g.rotate(s * 0.08 * flip);
+        g.fillStyle = dark; g.fillRect(-2.5, 0, 5, 12);
+        g.fillStyle = boot; g.fillRect(-2.5, 11, 5 + 2 * flip, 4);
+        g.restore();
+      }
+      g.restore();
+    } else {
+      const lUp = step > 0 ? 2 : 0, rUp = step < 0 ? 2 : 0;
+      g.fillRect(13, 45 + bobY, 5, 12 - lUp); g.fillRect(22, 45 + bobY, 5, 12 - rUp);
+      g.fillStyle = boot;
+      g.fillRect(12.5, 56 - lUp + bobY, 6, 4); g.fillRect(21.5, 56 - rUp + bobY, 6, 4);
+    }
+
+    // tunic
+    const bw = side ? 7 : 9.5;
+    const tg = g.createLinearGradient(cx - bw, 0, cx + bw, 0);
+    tg.addColorStop(0, dark); tg.addColorStop(0.45, color); tg.addColorStop(1, dark);
+    g.fillStyle = tg;
+    g.beginPath();
+    g.moveTo(cx - bw + 1.5, 24 + bobY); g.lineTo(cx + bw - 1.5, 24 + bobY);
+    g.lineTo(cx + bw + 1.5, 47 + bobY); g.lineTo(cx - bw - 1.5, 47 + bobY); g.closePath(); g.fill();
+    outline(g, 1, "rgba(0,0,0,.45)");
+    g.fillStyle = "#3a2612"; g.fillRect(cx - bw - 0.5, 39 + bobY, bw * 2 + 1, 2.5);          // belt
+    g.fillStyle = "#c99b4a"; g.fillRect(cx - 1.5, 39 + bobY, 3, 2.5);
+    if (dir === "back") { g.fillStyle = dark; g.fillRect(cx - bw + 1, 25 + bobY, bw * 2 - 2, 19); }   // cloak
+
+    // arms and whatever they are holding
+    const armCol = tint(color, -0.2);
+    const hand = (x, y) => { ellipse(g, x, y, 2.2, 2.2, skin); };
+    const armTo = (sx, sy, hx, hy) => { g.strokeStyle = armCol; g.lineWidth = 4; g.lineCap = "round"; g.beginPath(); g.moveTo(sx, sy); g.lineTo(hx, hy); g.stroke(); hand(hx, hy); };
+    if (side) {
+      const sx = cx, sy = 27 + bobY;
+      let hx = cx + flip * (attack ? 11 : 5), hy = attack ? 22 + bobY : 38 + bobY + step;
+      if (weapon === "sword") { armTo(sx, sy, hx, hy); drawSword(g, hx, hy, attack ? flip * 1.2 : flip * 0.35, 15); }
+      else if (weapon === "bow") { hx = cx + flip * 10; hy = 30 + bobY; armTo(sx, sy, hx, hy); drawBow(g, hx, hy, flip > 0 ? 0 : Math.PI, attack); }
+      else armTo(sx, sy, hx, hy);
+    } else {
+      const ls = [cx - bw, 27 + bobY], rs = [cx + bw, 27 + bobY];
+      const swingR = attack ? [cx + bw + 3, 17 + bobY] : [cx + bw + 2, 40 + bobY - step];
+      armTo(ls[0], ls[1], cx - bw - 2, 40 + bobY + step);
+      if (weapon === "sword") {
+        if (dir === "back") { drawSword(g, swingR[0], swingR[1], attack ? -0.4 : 0.25, 15); armTo(rs[0], rs[1], swingR[0], swingR[1]); }
+        else { armTo(rs[0], rs[1], swingR[0], swingR[1]); drawSword(g, swingR[0], swingR[1], attack ? -0.5 : 0.3, 15); }
+      } else if (weapon === "bow") {
+        const bx = dir === "back" ? cx + 4 : cx + 5, by = 31 + bobY;
+        armTo(rs[0], rs[1], bx, by);
+        drawBow(g, bx, by, -Math.PI / 2, attack);
+      } else {
+        armTo(rs[0], rs[1], attack ? cx + 4 : swingR[0], attack ? 28 + bobY : swingR[1]);
+      }
+    }
+
+    // head and hood
+    const hy = 15 + bobY;
+    ellipse(g, cx, hy, 7.5, 8, dir === "back" ? dark : skin);
+    g.fillStyle = dark;
+    g.beginPath();
+    if (dir === "back") g.arc(cx, hy, 8.4, 0, U.TAU);
+    else if (side) { g.arc(cx - flip * 1.2, hy - 1, 8.4, Math.PI * (flip > 0 ? 0.62 : -0.6), Math.PI * (flip > 0 ? 2.02 : 0.4)); }
+    else g.arc(cx, hy - 1, 8.4, Math.PI * 0.96, Math.PI * 2.04);
+    g.fill();
+    g.fillStyle = light; g.fillRect(cx - 7, hy - 7 + (dir === "back" ? 0 : 1), 14, 2);           // hood trim
+    if (dir === "front") {
+      ellipse(g, cx - 2.8, hy + 1, 1.3, 1.6, "#1a1a22");
+      ellipse(g, cx + 2.8, hy + 1, 1.3, 1.6, "#1a1a22");
+    } else if (side) {
+      ellipse(g, cx + flip * 4, hy + 1, 1.2, 1.5, "#1a1a22");
+    }
+  }
+
+  function drawDowned(g, color) {
+    const dark = tint(color, -0.45);
+    ellipse(g, 32, 20, 26, 3.5, "rgba(0,0,0,.4)");
+    g.fillStyle = dark; g.fillRect(40, 13, 16, 6);                          // legs
+    g.fillStyle = "#3a2612"; g.fillRect(55, 12, 4, 7);
+    g.fillStyle = color; g.fillRect(18, 10, 24, 10);                        // body
+    outline(g, 1, "rgba(0,0,0,.45)");
+    ellipse(g, 12, 15, 7, 6.5, "#e0b08a");                                  // head
+    g.fillStyle = dark; g.beginPath(); g.arc(12, 14, 7, Math.PI * 0.6, Math.PI * 1.9); g.fill();
+    g.strokeStyle = "rgba(255,255,255,.55)"; g.lineWidth = 1;               // stars circling
+    for (let k = 0; k < 3; k++) { const a = k * 2.1; g.beginPath(); g.arc(12 + Math.cos(a) * 9, 5 + Math.sin(a) * 2.5, 1.2, 0, U.TAU); g.stroke(); }
+  }
 })();

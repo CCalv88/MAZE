@@ -29,6 +29,8 @@
         <button data-act="export">Export</button>
         <button data-act="import">Import</button>
       </div>
+      <button id="roomPill" class="roomPill" hidden title="Back to your room's lobby">Room <b id="roomPillCode"></b></button>
+      <button id="btnOnline" class="online" title="Host this maze for up to 4 players, or join a friend's room">⚑ PLAY ONLINE</button>
       <button id="btnTest" class="primary">▶ TEST MAZE</button>
     </header>
 
@@ -47,6 +49,10 @@
       <aside id="inspector">
         <div class="panelTitle">Level</div>
         <label class="field">Name<input id="inpName" type="text" value="Untitled Maze" maxlength="40"></label>
+        <div class="codeRow" title="A hash of this exact layout. Any edit gives the maze a new code.">
+          <span>Maze code</span><b id="mazeCode" class="code">------</b>
+          <button id="btnShareMaze" title="Put this maze online and copy a link to it">Share</button>
+        </div>
         <div id="levelStats" class="stats"></div>
         <div id="validation" class="validation"></div>
 
@@ -61,10 +67,75 @@
           <li><b>Secret wall</b> — looks solid, you walk right through it.</li>
           <li><b>Door</b> — needs the key. <b>Glass</b> — see through, solid.</li>
           <li><b>Blobs</b> — hunt you through the maze.</li>
+          <li><b>Starts P2–P4</b> — where friends spawn online.</li>
         </ul>
       </aside>
     </div>
     <input id="fileInput" type="file" accept="application/json,.json" hidden>
+
+    <!-- ============== ONLINE: host / join ============== -->
+    <div id="onlinePanel" class="overlay" hidden>
+      <div class="panel wide">
+        <h1>ONLINE</h1>
+        <p class="lead">Up to four players in one maze.</p>
+        <label class="field nameField">Your name<input id="inpPlayerName" type="text" maxlength="14" placeholder="Adventurer"></label>
+        <div class="cards">
+          <div class="card">
+            <h3>Host this maze</h3>
+            <p class="small"><b id="hostMazeName">—</b> · code <b id="hostMazeCode" class="code">——</b></p>
+            <div class="modePick" data-for="host">
+              <button class="modeBtn on" data-mode="coop"><b>Co-op</b><span>Work together. Everyone has to get out. Revive fallen friends.</span></button>
+              <button class="modeBtn" data-mode="versus"><b>Competitive</b><span>Weapons hurt players. First one through the exit wins.</span></button>
+            </div>
+            <button id="btnCreateRoom" class="primary">Create room</button>
+          </div>
+          <div class="card">
+            <h3>Join a friend</h3>
+            <div class="inline"><input id="inpJoinCode" class="codeInput" type="text" maxlength="5" placeholder="ROOM" autocomplete="off"><button id="btnJoinRoom" class="primary">Join room</button></div>
+            <h3>Open a maze by its code</h3>
+            <div class="inline"><input id="inpMazeCode" class="codeInput" type="text" maxlength="6" placeholder="MAZE" autocomplete="off"><button id="btnOpenMaze">Open</button></div>
+            <p class="small">Loads someone's maze into your editor.</p>
+          </div>
+        </div>
+        <div id="onlineMsg" class="msg"></div>
+        <button data-close="onlinePanel">Close</button>
+      </div>
+    </div>
+
+    <!-- ============== ONLINE: room lobby ============== -->
+    <div id="lobbyPanel" class="overlay" hidden>
+      <div class="panel wide">
+        <div class="lobbyHead">
+          <div>
+            <div class="kicker">ROOM CODE</div>
+            <div id="lobbyCode" class="bigCode">-----</div>
+          </div>
+          <div class="lobbyInvite">
+            <button id="btnCopyInvite">Copy invite link</button>
+            <div class="small">Friends open the link, or press <b>Play Online</b> and enter the code.</div>
+          </div>
+        </div>
+        <div class="lobbyMaze">
+          <canvas id="lobbyPreview" width="150" height="110"></canvas>
+          <div>
+            <div class="kicker">MAZE</div>
+            <div class="mazeName" id="lobbyMazeName">—</div>
+            <div class="small">code <b id="lobbyMazeCode" class="code">——</b></div>
+            <button id="btnLobbyUseMaze" class="hostOnly" title="Swap in whatever is in your editor right now">Use the maze in my editor</button>
+            <button id="btnLobbyEdit" class="hostOnly" title="Go back to the editor; the room stays open">Edit maze</button>
+          </div>
+        </div>
+        <div class="modePick" data-for="lobby">
+          <button class="modeBtn" data-mode="coop"><b>Co-op</b><span>Everyone out. Revive fallen friends.</span></button>
+          <button class="modeBtn" data-mode="versus"><b>Competitive</b><span>Weapons hurt players. First out wins.</span></button>
+        </div>
+        <div id="lobbySeats" class="seats"></div>
+        <div id="lobbyResult" class="lobbyResult" hidden></div>
+        <div id="lobbyStatus" class="msg"></div>
+        <button id="btnStartMatch" class="primary big">START</button>
+        <button id="btnLeaveRoom">Leave room</button>
+      </div>
+    </div>
   </section>
 
   <!-- ================= GAME ================= -->
@@ -75,16 +146,18 @@
     <div id="clickToPlay" class="overlay">
       <div class="panel">
         <h1>READY</h1>
-        <p class="lead">Find the exit. Do not get eaten.</p>
+        <p id="readyLead" class="lead">Find the exit. Do not get eaten.</p>
         <div class="keys">
           <div><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> move</div>
           <div><kbd>Mouse</kbd> look · <kbd>Shift</kbd> sprint</div>
           <div><kbd>L-Click</kbd> attack · <kbd>R-Click</kbd> raise shield</div>
           <div><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> weapons · <kbd>Wheel</kbd> cycle</div>
           <div><kbd>E</kbd> open door · <kbd>Tab</kbd> map · <kbd>Esc</kbd> pause</div>
+          <div class="onlineOnly"><kbd>F</kbd> ping a spot for everyone · <kbd>E</kbd> (hold) revive a teammate</div>
         </div>
         <button class="primary big" data-act="lock">CLICK TO PLAY</button>
-        <button data-act="quit">Back to editor</button>
+        <button class="soloOnly" data-act="quit">Back to editor</button>
+        <button class="onlineOnly" data-act="leaveMatch">Leave room</button>
       </div>
     </div>
 
@@ -103,23 +176,29 @@
             <input id="inpSens" type="range" min="0.3" max="3" step="0.1" value="1">
           </label>
         </div>
+        <p class="lead onlineOnly">Online games keep going while you are paused.</p>
         <button class="primary big" data-act="lock">RESUME</button>
-        <button data-act="restart">Restart maze</button>
-        <button data-act="quit">Back to editor</button>
+        <button class="soloOnly" data-act="restart">Restart maze</button>
+        <button class="soloOnly" data-act="quit">Back to editor</button>
+        <button class="onlineOnly hostOnly" data-act="abort">End match for everyone</button>
+        <button class="onlineOnly" data-act="leaveMatch">Leave room</button>
       </div>
     </div>
 
     <div id="endPanel" class="overlay" hidden>
-      <div class="panel">
+      <div class="panel wide">
         <h1 id="endTitle">ESCAPED</h1>
         <p id="endLead" class="lead"></p>
         <div id="endStats" class="endStats"></div>
-        <button class="primary big" data-act="restart">TRY AGAIN</button>
-        <button data-act="quit">Back to editor</button>
+        <div id="endTable" class="endTable"></div>
+        <button class="primary big soloOnly" data-act="restart">TRY AGAIN</button>
+        <button class="soloOnly" data-act="quit">Back to editor</button>
+        <button class="primary big onlineOnly" data-act="toLobby">BACK TO LOBBY</button>
       </div>
     </div>
   </section>
 </div>
+<div id="toast" class="toast" hidden></div>
 
 <script src="js/util.js"></script>
 <script src="js/defs.js"></script>
@@ -127,11 +206,14 @@
 <script src="js/sprites.js"></script>
 <script src="js/audio.js"></script>
 <script src="js/level.js"></script>
+<script src="js/sim.js"></script>
 <script src="js/editor.js"></script>
 <script src="js/raycaster.js"></script>
 <script src="js/entities.js"></script>
 <script src="js/hud.js"></script>
 <script src="js/game.js"></script>
+<script src="js/net.js"></script>
+<script src="js/online.js"></script>
 <script src="js/main.js"></script>
 </body>
 </html>

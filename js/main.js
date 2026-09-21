@@ -6,7 +6,7 @@
 
   let editor = null;
   let game = null;
-  let lastResult = null;
+  let soloLevel = null;          // the maze a solo run started from, for "try again"
 
   const $ = (id) => document.getElementById(id);
 
@@ -24,23 +24,51 @@
     $("endPanel").hidden = true;
   }
 
-  // --------------------------------------------------------------- play --
-  function startGame(level) {
-    $("editorScreen").hidden = true;
-    $("gameScreen").hidden = false;
-    hidePanels();
-    $("clickToPlay").hidden = false;
-
+  function ensureGame() {
     if (!game) {
       game = new MAZE.Game($("view"), $("hud"), { onEnd: onEnd });
       MAZE.game = game;
       game.sensitivity = parseFloat($("inpSens").value) || 1;
       game.setQuality(parseFloat($("selQuality").value) || 0.7);
     }
-    game.handleResize();
-    game.load(level);
-    game.paused = true;
-    game.start();
+    return game;
+  }
+
+  function enterGame(full, seat, link, lead) {
+    $("editorScreen").hidden = true;
+    $("gameScreen").hidden = false;
+    hidePanels();
+    $("readyLead").textContent = lead;
+    $("clickToPlay").hidden = false;
+    const g = ensureGame();
+    g.stop();
+    g.handleResize();
+    g.load(full, seat, link);
+    g.paused = true;
+    g.start();
+  }
+
+  // --------------------------------------------------------------- play --
+  // Solo: the whole world runs right here in the tab.
+  function startGame(level) {
+    soloLevel = L.clone(level);
+    document.body.classList.remove("is-online");
+    const sim = new MAZE.Sim(level, { mode: "solo" });
+    sim.addPlayer(0, "You");
+    enterGame(sim.fullState(), 0, new MAZE.LocalLink(sim, 0), "Find the exit. Do not get eaten.");
+  }
+
+  // Online: the server runs the world; msg is its "start" message.
+  function startOnline(msg) {
+    document.body.classList.add("is-online");
+    const mode = MAZE.MODES[msg.full.mode];
+    const lead = msg.full.mode === "versus"
+      ? "Competitive — first one out wins. Watch your back."
+      : "Co-op — everyone has to get out. Stick together.";
+    enterGame(msg.full, msg.seat, new MAZE.NetLink(MAZE.net, msg.seat), lead);
+    game.playerName = (msg.names && msg.names[msg.seat]) || "You";
+    game.opts.names = msg.names || {};
+    if (mode) document.title = "MAZE · " + mode.name;
   }
 
   function lockPointer() {
@@ -54,30 +82,7 @@
     game.last = performance.now();
   }
 
-  function onEnd(result) {
-    lastResult = result;
-    if (document.exitPointerLock) document.exitPointerLock();
-    const s = result.stats;
-    $("endTitle").textContent = result.won ? "ESCAPED" : "YOU DIED";
-    $("endTitle").className = result.won ? "" : "dead";
-    $("endLead").textContent = result.won
-      ? "You found your way out of " + game.level.name + "."
-      : "The maze keeps you. " + game.level.name + " wins this round.";
-
-    const rows = [
-      ["Time", U.fmtTime(s.time)],
-      ["Blobs slain", String(s.kills)],
-      ["Treasure", s.treasure + " / " + game.totalTreasure],
-      ["Secrets found", String(s.secrets)],
-      ["Damage taken", String(Math.round(s.damage))]
-    ];
-    if (result.won) {
-      rows.push(["Time bonus", "+" + s.timeBonus]);
-      if (s.allTreasure) rows.push(["All treasure", "+1000"]);
-    }
-    rows.push(["SCORE", String(Math.round(s.score))]);
-
-    const host = $("endStats");
+  function statRows(host, rows) {
     host.innerHTML = "";
     rows.forEach(function (r) {
       const a = document.createElement("span");
@@ -86,14 +91,61 @@
       b.textContent = r[1];
       host.appendChild(a); host.appendChild(b);
     });
+  }
+
+  function onEnd(result, g) {
+    if (document.exitPointerLock) document.exitPointerLock();
+    document.title = "MAZE";
+    const me = result.players.find((p) => p.seat === g.seat) || result.players[0];
+    const title = $("endTitle"), lead = $("endLead");
+    $("endStats").innerHTML = "";
+    $("endTable").innerHTML = "";
+
+    if (result.mode === "solo") {
+      const s = me.stats, won = result.outcome === "escaped";
+      title.textContent = won ? "ESCAPED" : "YOU DIED";
+      title.className = won ? "" : "dead";
+      lead.textContent = won
+        ? "You found your way out of " + g.level.name + "."
+        : "The maze keeps you. " + g.level.name + " wins this round.";
+      const rows = [
+        ["Time", U.fmtTime(s.time)],
+        ["Blobs slain", String(s.kills)],
+        ["Treasure", s.treasure + " / " + result.totalTreasure],
+        ["Secrets found", String(s.secrets)],
+        ["Damage taken", String(Math.round(s.damage))]
+      ];
+      if (won) {
+        rows.push(["Time bonus", "+" + (s.timeBonus || 0)]);
+        if (s.allTreasure) rows.push(["All treasure", "+1000"]);
+      }
+      rows.push(["SCORE", String(Math.round(s.score))]);
+      statRows($("endStats"), rows);
+    } else {
+      if (result.mode === "versus") {
+        const winner = result.players.find((p) => p.seat === result.winner);
+        const iWon = result.winner === g.seat;
+        title.textContent = iWon ? "YOU WIN" : winner ? (winner.name + " WINS").toUpperCase() : "MATCH OVER";
+        title.className = iWon ? "" : "dead";
+        lead.textContent = iWon ? "First one out of " + g.level.name + ". Nobody could stop you."
+          : winner ? winner.name + " got out of " + g.level.name + " first." : "Nobody made it out.";
+      } else {
+        const out = result.players.filter((p) => p.escaped).length;
+        const all = out === result.players.filter((p) => !p.away).length;
+        title.textContent = result.outcome === "escaped" ? (all ? "TEAM ESCAPED" : "ESCAPED") : "WIPED OUT";
+        title.className = result.outcome === "escaped" ? "" : "dead";
+        lead.textContent = result.outcome === "escaped"
+          ? (all ? "Everyone made it out of " + g.level.name + "." : out + " of you made it out of " + g.level.name + ".")
+          : "The whole party fell. " + g.level.name + " wins this round.";
+      }
+      $("endTable").appendChild(MAZE.online.resultTable(result, g.seat));
+    }
     $("endPanel").hidden = false;
   }
 
   function restart() {
-    hidePanels();
-    game.restart();
-    game.paused = true;
-    $("clickToPlay").hidden = false;
+    if (!soloLevel) return;
+    startGame(soloLevel);
   }
 
   // ------------------------------------------------------------ topbar --
@@ -150,14 +202,22 @@
 
   function flash(text) {
     const el = $("editorHint");
-    const old = el.textContent;
+    if (flash._old == null) flash._old = el.textContent;
     el.textContent = text;
     el.style.color = "#ffb454";
     clearTimeout(flash._t);
     flash._t = setTimeout(function () {
-      el.textContent = old;
+      el.textContent = flash._old;
+      flash._old = null;
       el.style.color = "";
-    }, 1800);
+    }, 2400);
+  }
+
+  function loadIntoEditor(level) {
+    editor.snapshot();
+    editor.level = level;
+    editor.syncInputs();
+    editor.render();
   }
 
   // ---------------------------------------------------------------- go --
@@ -171,12 +231,21 @@
     editor.refreshLevelList();
     editor.render();
 
+    MAZE.app = {
+      editor: editor, flash: flash, showEditor: showEditor, startOnline: startOnline, loadIntoEditor: loadIntoEditor,
+      game: function () { return game; },
+      currentLevel: function () { editor.level.name = ($("inpName").value || "Untitled Maze").trim(); return editor.level; }
+    };
+
     document.querySelectorAll("[data-act]").forEach(function (b) {
       b.addEventListener("click", function () {
         const act = b.dataset.act;
         if (act === "lock") { lockPointer(); return; }
         if (act === "restart") { restart(); return; }
         if (act === "quit") { showEditor(); return; }
+        if (act === "toLobby") { showEditor(); MAZE.online.showLobby(); return; }
+        if (act === "leaveMatch") { showEditor(); MAZE.online.leaveRoom(); return; }
+        if (act === "abort") { MAZE.net.send({ t: "abort" }); return; }
         topbarAction(act);
       });
     });
@@ -198,10 +267,7 @@
       const fr = new FileReader();
       fr.onload = function () {
         try {
-          editor.snapshot();
-          editor.level = L.fromJSON(String(fr.result));
-          editor.syncInputs();
-          editor.render();
+          loadIntoEditor(L.fromJSON(String(fr.result)));
           flash("Imported " + editor.level.name);
         } catch (err) {
           flash("That file is not a MAZE level.");
@@ -236,6 +302,7 @@
     // editor keyboard shortcuts
     window.addEventListener("keydown", function (e) {
       if (!$("gameScreen").hidden) return;
+      if (document.querySelector("#editorScreen .overlay:not([hidden])")) return;
       const tag = (e.target.tagName || "").toLowerCase();
       if (tag === "input" || tag === "select" || tag === "textarea") return;
       const ctrl = e.ctrlKey || e.metaKey;
@@ -248,6 +315,8 @@
       if (e.code in wallKeys) { editor.select("wall", wallKeys[e.code]); return; }
       if (e.code === "Enter") { $("btnTest").click(); }
     });
+
+    MAZE.online.init();
   }
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);
